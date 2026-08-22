@@ -340,7 +340,7 @@ DNS = 1.1.1.1, 2606:4700:4700::1111
 [Peer]
 PublicKey = <server-public-key>
 Endpoint = vpn.example.com:51820
-AllowedIPs = 172.20.0.0/16, fd20:20::/64, 192.168.150.0/24
+AllowedIPs = 172.20.0.0/16, fd20:20::/64, 192.168.1.0/24
 PersistentKeepalive = 25
 ```
 

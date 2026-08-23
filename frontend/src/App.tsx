@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity, Boxes, Container, GitBranch, LayoutDashboard, Network,
-  RefreshCw, Route, Search, Server, Shield, Wifi, CircleDot, Plug, Trash2, KeyRound, Waypoints, Plus, UserCog, LogOut, Moon, Sun, Download, QrCode, X, CheckCircle2, AlertTriangle, Info
+  RefreshCw, Route, Search, Server, Shield, Wifi, CircleDot, Plug, Trash2, KeyRound, Waypoints, Plus, UserCog, LogOut, Moon, Sun, Download, QrCode, X, CheckCircle2, AlertTriangle, Info, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { Background, Controls, Edge, MarkerType, Node, ReactFlow, useNodesState } from "@xyflow/react";
-import { getUpdateStatus,  addManagementUser, changeManagementRole, changePassword, createFirewallRule, createHostInputRule, createPublishedPortRule, firewallAction, getFirewallStatus, getMe, getNetworkStats, getTopology, listManagementUsers, login, logout, removeFirewallRule, removeHostInputRule, removeManagementUser, removePublishedPortRule, resetManagementPassword, createRoute, createWgInterface, createWgPeer, getRoutingStatus, getWgClientConfig, getWgClientQr, getWireGuard, removeRoute, updateRoute, removeWgInterface, removeWgPeer, setRoutingForward, setRoutingForward6, setWgAccessPolicy, setWgIpv6, updateWgPeer, setWgPeerEnabled } from "./api";
+import { getUpdateStatus,  addManagementUser, changeManagementRole, changePassword, createFirewallRule, createHostInputRule, createPublishedPortRule, createAccessRule, updateAccessRule, removeAccessRule, reorderAccessRules, firewallAction, getFirewallStatus, getMe, getNetworkStats, getTopology, listManagementUsers, login, logout, removeFirewallRule, removeHostInputRule, removeManagementUser, removePublishedPortRule, resetManagementPassword, createRoute, createWgInterface, createWgPeer, getRoutingStatus, getWgClientConfig, getWgClientQr, getWireGuard, removeRoute, updateRoute, removeWgInterface, removeWgPeer, setRoutingForward, setRoutingForward6, setWgAccessPolicy, setWgIpv6, updateWgPeer, setWgPeerEnabled } from "./api";
 import type { DockerContainer, DockerNetwork, FirewallStatus, NetworkStatsResponse, RoutingStatus, Topology, WireGuardStatus } from "./types";
 
 type Page = "dashboard" | "networks" | "containers" | "ports" | "topology" | "firewall" | "routing" | "wireguard" | "management";
@@ -83,6 +83,8 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [firewallStatus, setFirewallStatus] = useState<FirewallStatus | null>(null);
   const [trafficRates, setTrafficRates] = useState<Record<string,{rxRate:number;txRate:number;rxBytes:number;txBytes:number}>>({});
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>localStorage.getItem("drm-sidebar-collapsed")==="1");
+  useEffect(()=>{localStorage.setItem("drm-sidebar-collapsed",sidebarCollapsed?"1":"0")},[sidebarCollapsed]);
 
   async function refresh() {
     setLoading(true);
@@ -155,11 +157,14 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
   }, [data, query]);
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={sidebarCollapsed?"shell sidebar-collapsed":"shell"}>
+      <aside className={sidebarCollapsed?"sidebar collapsed":"sidebar"}>
         <div className="brand">
           <div className="brand-mark"><img src="/drm-mark.svg" alt="DRM" /></div>
           <div className="brand-text"><strong>Docker Router</strong><span>Manager</span></div>
+          <button className="sidebar-collapse-btn" onClick={()=>setSidebarCollapsed(v=>!v)} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>
+            {sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}
+          </button>
         </div>
 
         <nav>
@@ -169,7 +174,7 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
               <button key={item.id}
                 className={page === item.id ? "nav-item active" : "nav-item"}
                 onClick={() => { setPage(item.id); setQuery(""); }}>
-                <Icon size={18}/>{item.label}
+                <Icon size={22}/><span className="nav-label">{item.label}</span>
               </button>
             );
           })}
@@ -186,7 +191,7 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
             <span className="theme-toggle-text">{theme==="dark"?"Light theme":"Dark theme"}</span>
           </button>
           <div className="sidebar-user"><strong>{auth.username}</strong><span>{auth.role}</span><button onClick={onLogout} title="Logout"><LogOut size={14}/></button></div>
-          <div className="version">DRM v0.9.9</div>
+          <div className="version">DRM v0.10.12</div>
         </div>
       </aside>
 
@@ -421,10 +426,11 @@ function Ports({containers,firewall}:{containers:DockerContainer[];firewall:Fire
     const rules=firewall?.config.publishedPortRules ?? [];
     const matching=p.published.flatMap(binding => rules.filter(r => r.enabled && r.containerId===c.id && r.protocol===p.protocol && r.publishedPort===binding.hostPort && r.containerPort===p.port && (r.hostIp===binding.hostIp || (!r.hostIp && !binding.hostIp))));
     const blocks=matching.filter(r=>r.action==="DROP" || r.action==="REJECT"); const accepts=matching.filter(r=>r.action==="ACCEPT");
-    if(blocks.some(r=>r.sourceCidr==="0.0.0.0/0")) return {state:"blocked" as const,detail:"All sources blocked"};
-    if(blocks.length) return {state:"restricted" as const,detail:`Blocked: ${blocks.map(r=>r.sourceCidr).join(", ")}`};
-    if(accepts.some(r=>r.sourceCidr==="0.0.0.0/0")) return {state:"allowed" as const,detail:"Explicit allow"};
-    if(accepts.length) return {state:"restricted" as const,detail:`Allowed only: ${accepts.map(r=>r.sourceCidr).join(", ")}`};
+    const anyDst=(r:any)=>!r.destinationCidr || r.destinationCidr==="0.0.0.0/0" || r.destinationCidr==="::/0";
+    if(blocks.some(r=>(r.sourceCidr==="0.0.0.0/0"||r.sourceCidr==="::/0")&&anyDst(r))) return {state:"blocked" as const,detail:"All sources blocked"};
+    if(blocks.length) return {state:"restricted" as const,detail:`Blocked: ${blocks.map(r=>`${r.sourceCidr} → ${r.destinationCidr||"ANY"}`).join(", ")}`};
+    if(accepts.some(r=>(r.sourceCidr==="0.0.0.0/0"||r.sourceCidr==="::/0")&&anyDst(r))) return {state:"allowed" as const,detail:"Explicit allow"};
+    if(accepts.length) return {state:"restricted" as const,detail:`Allowed: ${accepts.map(r=>`${r.sourceCidr} → ${r.destinationCidr||"ANY"}`).join(", ")}`};
     return {state:"open" as const,detail:"No firewall rule"};
   }
 
@@ -476,6 +482,9 @@ function FirewallEngine() {
   const [publishedKey,setPublishedKey]=useState("");
   const [publishedFamily,setPublishedFamily]=useState<4|6>(4);
   const [publishedSource,setPublishedSource]=useState("0.0.0.0/0");
+  const [publishedDestination,setPublishedDestination]=useState("0.0.0.0/0");
+  const [publishedDestinationType,setPublishedDestinationType]=useState<"any"|"docker-network"|"custom">("any");
+  const [publishedDestinationNetwork,setPublishedDestinationNetwork]=useState("");
   const [publishedAction,setPublishedAction]=useState<"DROP"|"REJECT"|"ACCEPT">("DROP");
   const [publishedDescription,setPublishedDescription]=useState("");
   const [hostPortKey,setHostPortKey]=useState("");
@@ -486,6 +495,18 @@ function FirewallEngine() {
   const [hostPort,setHostPort]=useState("");
   const [hostAction,setHostAction]=useState<"ACCEPT"|"DROP"|"REJECT">("DROP");
   const [hostDescription,setHostDescription]=useState("");
+  const [accessFamily,setAccessFamily]=useState<4|6>(4);
+  const [accessSourceType,setAccessSourceType]=useState<"custom"|"docker-network"|"container"|"wireguard">("wireguard");
+  const [accessSourceKey,setAccessSourceKey]=useState("");
+  const [accessSourceCustom,setAccessSourceCustom]=useState("");
+  const [accessDestinationType,setAccessDestinationType]=useState<"custom"|"docker-network"|"container"|"wireguard">("container");
+  const [accessDestinationKey,setAccessDestinationKey]=useState("");
+  const [accessDestinationCustom,setAccessDestinationCustom]=useState("");
+  const [accessProtocol,setAccessProtocol]=useState<"all"|"tcp"|"udp"|"icmp"|"icmpv6">("all");
+  const [accessPort,setAccessPort]=useState("");
+  const [accessAction,setAccessAction]=useState<"ACCEPT"|"DROP"|"REJECT">("DROP");
+  const [accessDescription,setAccessDescription]=useState("");
+  const [editingAccessId,setEditingAccessId]=useState<string|null>(null);
 
 
   async function load() {
@@ -497,6 +518,9 @@ function FirewallEngine() {
 
   const networks=status?.networkRefs ?? [];
   const byId=new Map(networks.map(n=>[n.id,n]));
+  const publishedDestinationNetworks=networks.flatMap(n=>n.subnets
+    .filter(c=>publishedFamily===6?c.includes(":"):c.includes("."))
+    .map(c=>({key:`${n.id}|${c}`,name:n.name,cidr:c})));
 
   async function addRule() {
     if(!source || !destination){setMessage("Select source and destination networks");return;}
@@ -542,7 +566,8 @@ function FirewallEngine() {
       await createPublishedPortRule({
         ...selectedPublished,
         family:publishedFamily,
-        sourceCidr:publishedSource || "0.0.0.0/0",
+        sourceCidr:publishedSource || (publishedFamily===6 ? "::/0" : "0.0.0.0/0"),
+        destinationCidr:publishedDestination || (publishedFamily===6 ? "::/0" : "0.0.0.0/0"),
         action:publishedAction,
         description:publishedDescription
       });
@@ -559,6 +584,60 @@ function FirewallEngine() {
   function chooseHostPort(key:string){setHostPortKey(key);const r=(status?.hostPortRefs??[]).find(x=>`${x.protocol}|${x.listenAddress}|${x.port}`===key);if(r){setHostProtocol(r.protocol);setHostPort(String(r.port));}}
   async function addHostRule(){setBusy(true);try{await createHostInputRule({family:hostFamily,interfaceName:hostInterface,localAddress:selectedHostPort&&!["0.0.0.0","*","::"].includes(selectedHostPort.listenAddress)?selectedHostPort.listenAddress:null,protocol:hostProtocol,destinationPort:["tcp","udp"].includes(hostProtocol)&&hostPort?Number(hostPort):null,sourceCidr:hostSource,action:hostAction,description:hostDescription});setHostDescription("");await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
   async function removeHostRule(id:string){setBusy(true);try{await removeHostInputRule(id);await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+
+  const accessNetworkOptions=(status?.networkRefs??[]).filter(n=>n.subnets.some(c=>accessFamily===6?c.includes(":"):c.includes(".")));
+  const accessContainerOptions=(status?.containerRefs??[]).filter(c=>c.addresses.some(a=>a.family===accessFamily));
+  const accessWireGuardOptions=(status?.wireguardRefs??[]).filter(w=>w.family===accessFamily);
+
+  function selectorFrom(type:"custom"|"docker-network"|"container"|"wireguard",key:string,custom:string){
+    if(type==="custom")return {type,value:custom.trim(),label:custom.trim()};
+    if(type==="docker-network"){const ref=(status?.networkRefs??[]).find(n=>n.id===key);return {type,refId:key,label:ref?.name||key};}
+    if(type==="container"){const ref=(status?.containerRefs??[]).find(c=>c.id===key);return {type,refId:key,label:ref?.name||key};}
+    const ref=(status?.wireguardRefs??[]).find(w=>w.id===key);return {type,refId:key,value:ref?.cidr||"",label:ref?`${ref.name} · ${ref.cidr}`:key};
+  }
+  function accessSelectorReady(type:string,key:string,custom:string){return type==="custom"?Boolean(custom.trim()):Boolean(key);}
+
+  async function saveAccessRule(){
+    if(!accessSelectorReady(accessSourceType,accessSourceKey,accessSourceCustom)||!accessSelectorReady(accessDestinationType,accessDestinationKey,accessDestinationCustom)){setMessage("Select source and destination");return;}
+    const payload={
+      family:accessFamily,
+      source:selectorFrom(accessSourceType,accessSourceKey,accessSourceCustom),
+      destination:selectorFrom(accessDestinationType,accessDestinationKey,accessDestinationCustom),
+      protocol:accessProtocol,
+      destinationPort:["tcp","udp"].includes(accessProtocol)&&accessPort?Number(accessPort):null,
+      action:accessAction,
+      description:accessDescription
+    };
+    setBusy(true);
+    try{
+      if(editingAccessId)await updateAccessRule(editingAccessId,payload);else await createAccessRule(payload);
+      setEditingAccessId(null);setAccessDescription("");setAccessPort("");await load();
+    }catch(e){setMessage(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
+  }
+  function editAccessRule(rule:any){
+    setEditingAccessId(rule.id);setAccessFamily(rule.family===6?6:4);
+    setAccessSourceType(rule.source.type);setAccessSourceKey(rule.source.refId||"");setAccessSourceCustom(rule.source.type==="custom"?(rule.source.value||""):"");
+    setAccessDestinationType(rule.destination.type);setAccessDestinationKey(rule.destination.refId||"");setAccessDestinationCustom(rule.destination.type==="custom"?(rule.destination.value||""):"");
+    setAccessProtocol(rule.protocol);setAccessPort(rule.destinationPort?String(rule.destinationPort):"");setAccessAction(rule.action);setAccessDescription(rule.description||"");
+  }
+  async function toggleAccessRule(rule:any){setBusy(true);try{await updateAccessRule(rule.id,{enabled:!rule.enabled});await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+  async function deleteAccessRule(id:string){setBusy(true);try{await removeAccessRule(id);if(editingAccessId===id)setEditingAccessId(null);await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
+  async function moveAccessRule(id:string,direction:-1|1){
+    const rules=[...(status?.config.accessRules??[])];const index=rules.findIndex(r=>r.id===id);const target=index+direction;if(index<0||target<0||target>=rules.length)return;
+    [rules[index],rules[target]]=[rules[target],rules[index]];
+    setBusy(true);try{await reorderAccessRules(rules.map(r=>r.id));await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}
+  }
+  function selectorLabel(sel:any){
+    if(sel.type==="custom")return sel.value||"—";
+    return sel.label||sel.value||sel.refId||"—";
+  }
+  function ruleCounter(kind:"network"|"published"|"input"|"access",id:string){
+    return status?.ruleCounters?.[`${kind}:${id}`] ?? {packets:0,bytes:0};
+  }
+  function counterView(counter:{packets:number;bytes:number}){
+    return <div className="fw-rule-counter"><strong>{counter.packets.toLocaleString()}</strong><small>pkts · {formatBytes(counter.bytes)}</small></div>;
+  }
 
   return <div className="firewall-stack">
     <div className="panel firewall-global">
@@ -615,7 +694,7 @@ function FirewallEngine() {
         <label><span>Description</span><input value={hostDescription} onChange={e=>setHostDescription(e.target.value)} placeholder="Optional"/></label>
         <button className="btn add-rule" disabled={busy} onClick={addHostRule}>Add rule</button>
       </div>
-      <div className="host-input-list">{(status?.config.hostInputRules??[]).map(rule=><div className="host-input-row" key={rule.id}><div><strong>{rule.interfaceName==="*"?"ANY":rule.interfaceName}</strong><small>{rule.localAddress||"any host IP"}</small></div><code>{rule.family===6?"IPv6":rule.family==="both"?"Dual":"IPv4"} · {rule.protocol.toUpperCase()} {rule.destinationPort??"ANY"}</code><code>{rule.sourceCidr}</code><span className={rule.action==="ACCEPT"?"pill green":rule.action==="DROP"?"pill danger":"pill"}>{rule.action}</span><span className="truncate">{rule.description||"—"}</span><button className="icon-danger" onClick={()=>removeHostRule(rule.id)}><Trash2 size={15}/></button></div>)}{!status?.config.hostInputRules?.length&&<div className="muted published-empty">No host INPUT rules configured</div>}</div>
+      <div className="host-input-list">{(status?.config.hostInputRules??[]).map(rule=><div className="host-input-row" key={rule.id}><div><strong>{rule.interfaceName==="*"?"ANY":rule.interfaceName}</strong><small>{rule.localAddress||"any host IP"}</small></div><code>{rule.family===6?"IPv6":rule.family==="both"?"Dual":"IPv4"} · {rule.protocol.toUpperCase()} {rule.destinationPort??"ANY"}</code><code>{rule.sourceCidr}</code><span className={rule.action==="ACCEPT"?"pill green":rule.action==="DROP"?"pill danger":"pill"}>{rule.action}</span>{counterView(ruleCounter("input",rule.id))}<span className="truncate">{rule.description||"—"}</span><button className="icon-danger" onClick={()=>removeHostRule(rule.id)}><Trash2 size={15}/></button></div>)}{!status?.config.hostInputRules?.length&&<div className="muted published-empty">No host INPUT rules configured</div>}</div>
     </div>
 
     <div className="panel">
@@ -643,10 +722,36 @@ function FirewallEngine() {
             })}
           </select>
         </label>
-        <label><span>Address family</span><select value={publishedFamily} onChange={e=>{const v=Number(e.target.value) as 4|6;setPublishedFamily(v);setPublishedSource(v===6?"::/0":"0.0.0.0/0");}}><option value="4">IPv4</option><option value="6">IPv6</option></select></label>
+        <label><span>Address family</span><select value={publishedFamily} onChange={e=>{const v=Number(e.target.value) as 4|6;setPublishedFamily(v);const any=v===6?"::/0":"0.0.0.0/0";setPublishedSource(any);setPublishedDestination(any);setPublishedDestinationType("any");setPublishedDestinationNetwork("");}}><option value="4">IPv4</option><option value="6">IPv6</option></select></label>
         <label><span>Source CIDR</span>
           <input value={publishedSource} onChange={e=>setPublishedSource(e.target.value)} placeholder={publishedFamily===6?"::/0":"0.0.0.0/0"}/>
         </label>
+        <label><span>Destination type</span>
+          <select value={publishedDestinationType} onChange={e=>{
+            const type=e.target.value as "any"|"docker-network"|"custom";
+            setPublishedDestinationType(type);
+            setPublishedDestinationNetwork("");
+            if(type==="any") setPublishedDestination(publishedFamily===6?"::/0":"0.0.0.0/0");
+            if(type==="custom") setPublishedDestination("");
+          }}>
+            <option value="any">Any</option>
+            <option value="docker-network">Docker Network</option>
+            <option value="custom">Custom CIDR</option>
+          </select>
+        </label>
+        {publishedDestinationType==="docker-network"&&<label><span>Destination Docker network</span>
+          <select value={publishedDestinationNetwork} onChange={e=>{
+            setPublishedDestinationNetwork(e.target.value);
+            const ref=publishedDestinationNetworks.find(x=>x.key===e.target.value);
+            setPublishedDestination(ref?.cidr||"");
+          }}>
+            <option value="">Select Docker network</option>
+            {publishedDestinationNetworks.map(x=><option key={x.key} value={x.key}>{x.name} · {x.cidr}</option>)}
+          </select>
+        </label>}
+        {publishedDestinationType==="custom"&&<label><span>Destination CIDR</span>
+          <input value={publishedDestination} onChange={e=>setPublishedDestination(e.target.value)} placeholder={publishedFamily===6?"fd20:20::/64":"172.20.0.0/16"}/>
+        </label>}
         <label><span>Action</span>
           <select value={publishedAction} onChange={e=>setPublishedAction(e.target.value as any)}>
             <option value="DROP">DROP</option><option value="REJECT">REJECT</option><option value="ACCEPT">ACCEPT</option>
@@ -663,13 +768,67 @@ function FirewallEngine() {
           <div className="published-policy-row" key={rule.id}>
             <div><strong>{rule.family===6?"IPv6":"IPv4"} · {rule.hostIp}:{rule.publishedPort}/{rule.protocol}</strong>
               <small>→ {rule.containerName}:{rule.containerPort}</small></div>
-            <code>{rule.sourceCidr}</code>
+            <div className="published-cidrs"><code>{rule.sourceCidr}</code><small>→ {rule.destinationCidr || (rule.family===6?"::/0":"0.0.0.0/0")}</small></div>
             <span className={rule.action==="ACCEPT"?"pill green":rule.action==="DROP"?"pill danger":"pill"}>{rule.action}</span>
+            {counterView(ruleCounter("published",rule.id))}
             <span className="truncate">{rule.description || "—"}</span>
             <button className="icon-danger" disabled={busy} onClick={()=>removePublished(rule.id)} title="Delete rule"><Trash2 size={15}/></button>
           </div>
         )}
         {!status?.config.publishedPortRules?.length && <div className="muted published-empty">No published-port firewall rules configured</div>}
+      </div>
+    </div>
+
+    <div className="panel access-firewall-panel">
+      <div className="firewall-titlebar">
+        <PanelTitle title="Container Access / Forwarding" subtitle="Control forwarded traffic from WireGuard, Docker containers/networks, or custom IP/CIDR sources"/>
+      </div>
+      <div className="session-policy-note"><Shield size={15}/><div><strong>First match wins</strong><span>Rules are evaluated from top to bottom before generic WireGuard/Docker forwarding allows. Changes are draft until Apply changes.</span></div></div>
+
+      <div className="access-rule-builder">
+        <label><span>Family</span><select value={accessFamily} onChange={e=>{const f=Number(e.target.value) as 4|6;setAccessFamily(f);setAccessSourceKey("");setAccessDestinationKey("");setAccessSourceCustom("");setAccessDestinationCustom("");}}><option value="4">IPv4</option><option value="6">IPv6</option></select></label>
+        <label><span>Source type</span><select value={accessSourceType} onChange={e=>{setAccessSourceType(e.target.value as any);setAccessSourceKey("");}}><option value="wireguard">WireGuard network</option><option value="container">Container</option><option value="docker-network">Docker network</option><option value="custom">Custom IP / CIDR</option></select></label>
+        <label className="access-selector-field"><span>Source</span>
+          {accessSourceType==="custom"?<input value={accessSourceCustom} onChange={e=>setAccessSourceCustom(e.target.value)} placeholder={accessFamily===6?"fd42:8::2/128":"10.8.0.2/32"}/>:
+           <select value={accessSourceKey} onChange={e=>setAccessSourceKey(e.target.value)}><option value="">Select source</option>
+             {accessSourceType==="wireguard"&&accessWireGuardOptions.map(x=><option key={x.id} value={x.id}>{x.kind==="tunnel"?"Tunnel":x.kind==="peer"?"Peer":"Remote network"} · {x.name} · {x.cidr}</option>)}
+             {accessSourceType==="container"&&accessContainerOptions.map(x=><option key={x.id} value={x.id}>{x.name} · {x.addresses.filter(a=>a.family===accessFamily).map(a=>a.address).join(", ")}</option>)}
+             {accessSourceType==="docker-network"&&accessNetworkOptions.map(x=><option key={x.id} value={x.id}>{x.name} · {x.subnets.filter(c=>accessFamily===6?c.includes(":"):c.includes(".")).join(", ")}</option>)}
+           </select>}
+        </label>
+        <label><span>Destination type</span><select value={accessDestinationType} onChange={e=>{setAccessDestinationType(e.target.value as any);setAccessDestinationKey("");}}><option value="container">Container</option><option value="docker-network">Docker network</option><option value="wireguard">WireGuard network</option><option value="custom">Custom IP / CIDR</option></select></label>
+        <label className="access-selector-field"><span>Destination</span>
+          {accessDestinationType==="custom"?<input value={accessDestinationCustom} onChange={e=>setAccessDestinationCustom(e.target.value)} placeholder={accessFamily===6?"fd20:20::2/128":"172.20.0.2/32"}/>:
+           <select value={accessDestinationKey} onChange={e=>setAccessDestinationKey(e.target.value)}><option value="">Select destination</option>
+             {accessDestinationType==="wireguard"&&accessWireGuardOptions.map(x=><option key={x.id} value={x.id}>{x.kind==="tunnel"?"Tunnel":x.kind==="peer"?"Peer":"Remote network"} · {x.name} · {x.cidr}</option>)}
+             {accessDestinationType==="container"&&accessContainerOptions.map(x=><option key={x.id} value={x.id}>{x.name} · {x.addresses.filter(a=>a.family===accessFamily).map(a=>a.address).join(", ")}</option>)}
+             {accessDestinationType==="docker-network"&&accessNetworkOptions.map(x=><option key={x.id} value={x.id}>{x.name} · {x.subnets.filter(c=>accessFamily===6?c.includes(":"):c.includes(".")).join(", ")}</option>)}
+           </select>}
+        </label>
+        <label><span>Protocol</span><select value={accessProtocol} onChange={e=>setAccessProtocol(e.target.value as any)}><option value="all">ANY</option><option value="tcp">TCP</option><option value="udp">UDP</option>{accessFamily===4?<option value="icmp">ICMP</option>:<option value="icmpv6">ICMPv6</option>}</select></label>
+        <label><span>Port</span><input disabled={!["tcp","udp"].includes(accessProtocol)} value={accessPort} onChange={e=>setAccessPort(e.target.value.replace(/\D/g,""))} placeholder={["tcp","udp"].includes(accessProtocol)?"1-65535":"—"}/></label>
+        <label><span>Action</span><select value={accessAction} onChange={e=>setAccessAction(e.target.value as any)}><option value="DROP">DROP</option><option value="REJECT">REJECT</option><option value="ACCEPT">ACCEPT</option></select></label>
+        <label><span>Description</span><input value={accessDescription} onChange={e=>setAccessDescription(e.target.value)} placeholder="Optional"/></label>
+        <button className="btn add-rule" disabled={busy} onClick={saveAccessRule}>{editingAccessId?"Save rule":"Add rule"}</button>
+        {editingAccessId&&<button className="btn secondary" disabled={busy} onClick={()=>setEditingAccessId(null)}>Cancel</button>}
+      </div>
+
+      <div className="access-rule-list">
+        {(status?.config.accessRules??[]).map((rule,index)=>{
+          const counter=ruleCounter("access",rule.id);
+          return <div className={`access-rule-row ${!rule.enabled?"disabled":""}`} key={rule.id}>
+            <div className="access-order"><strong>{index+1}</strong><button disabled={busy||index===0} onClick={()=>moveAccessRule(rule.id,-1)}>↑</button><button disabled={busy||index===(status?.config.accessRules.length??1)-1} onClick={()=>moveAccessRule(rule.id,1)}>↓</button></div>
+            <div><span className="access-family">{rule.family===6?"IPv6":"IPv4"}</span><strong>{selectorLabel(rule.source)}</strong><small>{rule.source.type}</small></div>
+            <div className="access-arrow">→</div>
+            <div><strong>{selectorLabel(rule.destination)}</strong><small>{rule.destination.type}</small></div>
+            <code>{rule.protocol.toUpperCase()} {rule.destinationPort??"ANY"}</code>
+            <span className={rule.action==="ACCEPT"?"pill green":rule.action==="DROP"?"pill danger":"pill"}>{rule.action}</span>
+            <div className="access-counter"><strong>{counter.packets.toLocaleString()}</strong><small>pkts · {formatBytes(counter.bytes)}</small></div>
+            <span className="truncate">{rule.description||"—"}</span>
+            <div className="access-actions"><button className="btn secondary" onClick={()=>editAccessRule(rule)}>Edit</button><button className="btn secondary" onClick={()=>toggleAccessRule(rule)}>{rule.enabled?"Disable":"Enable"}</button><button className="icon-danger" onClick={()=>deleteAccessRule(rule.id)}><Trash2 size={15}/></button></div>
+          </div>;
+        })}
+        {!status?.config.accessRules?.length&&<div className="muted published-empty">No container access rules configured</div>}
       </div>
     </div>
 
@@ -700,12 +859,13 @@ function FirewallEngine() {
     </div>
 
     <div className="table-panel">
-      <div className="fw-table-head"><span>Source</span><span>Destination</span><span>Protocol</span><span>Port</span><span>Action</span><span>Description</span><span></span></div>
+      <div className="fw-table-head"><span>Source</span><span>Destination</span><span>Protocol</span><span>Port</span><span>Action</span><span>Hits / Traffic</span><span>Description</span><span></span></div>
       {(status?.config.rules ?? []).map(rule=><div className="fw-table-row" key={rule.id}>
         <div><strong>{byId.get(rule.sourceNetworkId)?.name ?? "Missing network"}</strong><small>{byId.get(rule.sourceNetworkId)?.subnets.join(", ")}</small></div>
         <div><strong>{byId.get(rule.destinationNetworkId)?.name ?? "Missing network"}</strong><small>{byId.get(rule.destinationNetworkId)?.subnets.join(", ")}</small></div>
         <code>{rule.protocol.toUpperCase()}</code><code>{rule.destinationPort ?? "ANY"}</code>
         <span className={rule.action==="ACCEPT"?"pill green":rule.action==="DROP"?"pill danger":"pill"}>{rule.action}</span>
+        {counterView(ruleCounter("network",rule.id))}
         <span className="truncate">{rule.description || "—"}</span>
         <button className="icon-danger" disabled={busy} onClick={()=>remove(rule.id)} title="Delete rule"><Trash2 size={15}/></button>
       </div>)}
@@ -744,7 +904,7 @@ function RoutingPage(){
       <div className="panel routing-status"><div><PanelTitle title="IPv6 forwarding" subtitle="Host forwarding for WireGuard and Docker IPv6 networks"/></div><button className={status?.ipForward6?'engine-toggle on':'engine-toggle'} onClick={async()=>{await setRoutingForward6(!status?.ipForward6);await load()}}><span className="toggle-knob"/><span className="toggle-label">{status?.ipForward6?'ON':'OFF'}</span></button></div>
     </div>
     <div className="panel"><PanelTitle title={editingId?'Edit static route':'Add static route'} subtitle="Manage persistent IPv4 and IPv6 routes on the Docker host"/><div className="route-builder route-builder-dual">
-      <label><span>Family</span><select value={family} onChange={e=>{const f=Number(e.target.value) as 4|6;setFamily(f);setDestination('');setGateway('')}}><option value={4}>IPv4</option><option value={6}>IPv6</option></select></label>
+      <label><span>Family</span><div className="family-switch"><button type="button" className={family===4?"family-option active":"family-option"} onClick={()=>{setFamily(4);setDestination('');setGateway('')}}>IPv4</button><button type="button" className={family===6?"family-option active ipv6":"family-option"} onClick={()=>{setFamily(6);setDestination('');setGateway('')}}>IPv6</button></div></label>
       <label><span>Destination</span><input value={destination} onChange={e=>setDestination(e.target.value)} placeholder={family===4?'10.50.0.0/16':'2001:db8:100::/64'}/></label>
       <label><span>Gateway</span><input value={gateway} onChange={e=>setGateway(e.target.value)} placeholder={family===4?'192.168.150.1':'fd42:8::2'}/></label>
       <label><span>Interface</span><input value={dev} onChange={e=>setDev(e.target.value)} placeholder="wg0 / eth0"/></label>
@@ -915,31 +1075,10 @@ function WireGuardPage({topology}:{topology:Topology|null}){
         <label className="wg-network-check"><input type="checkbox" checked={Boolean(iface.ipv6Address)} onChange={e=>toggleSelectedIpv6(e.target.checked)}/><span><strong>IPv6</strong><small>{iface.ipv6Address?'Enabled for this WireGuard interface':'Enable automatic IPv6 addressing'}</small></span></label>
         {iface.ipv6Address&&<label><span>IPv6 gateway</span><div className="wg-inline-save"><input value={selectedIpv6Gateway} onChange={e=>setSelectedIpv6Gateway(e.target.value)}/><button className="btn secondary" onClick={()=>toggleSelectedIpv6(true)}>Apply</button></div><small className="field-hint">Peers are assigned ::2/128, ::3/128, ... automatically.</small></label>}
       </div>
-      <div className="wg-peer-builder wg-peer-builder-v2">
-        <label><span>Peer type</span><select value={peerMode} onChange={e=>setPeerMode(e.target.value as any)}><option value="remote-access">Remote Access</option><option value="site-to-site">Site-to-Site</option></select></label>
-        <label><span>Name</span><input value={peerName} onChange={e=>setPeerName(e.target.value)}/></label>
-        <label><span>Client address</span><input value={clientAddress} onChange={e=>setClientAddress(e.target.value)}/></label>
-        {iface.ipv6Address&&<label><span>Client IPv6 address</span><input value={clientIpv6Address} onChange={e=>{setClientIpv6Address(e.target.value);const v4=serverAllowed.split(',').map(x=>x.trim()).filter(x=>x&&!x.includes(':'));setServerAllowed([...v4,e.target.value].filter(Boolean).join(', '))}} placeholder="fd42:8::2/128"/><small className="field-hint">Next address is generated automatically.</small></label>}
-        {peerMode==="site-to-site"&&<label><span>Remote networks</span><input value={remoteNetworks} onChange={e=>setRemoteNetworks(e.target.value)} placeholder="192.168.50.0/24, fd50::/64"/><small className="field-hint">DRM adds these to Server AllowedIPs, routes them via this peer and includes them in Docker access policy.</small></label>}
-        <label><span>Endpoint address</span><input value={endpointHost} onChange={e=>{setEndpointHostTouched(true);setEndpointHost(e.target.value)}} placeholder="vpn.example.com"/></label>
-        <label><span>Endpoint port</span><input value={endpointPort} onChange={e=>{setEndpointPortTouched(true);setEndpointPort(e.target.value.replace(/\D/g,''))}} placeholder={String(iface.listenPort)}/></label>
-        <label><span>DNS</span><input value={dns} onChange={e=>setDns(e.target.value)} placeholder="1.1.1.1, 8.8.8.8"/></label>
-        <label><span>Server AllowedIPs</span><input disabled={peerMode==="site-to-site"} value={peerMode==="site-to-site"?[clientAddress,clientIpv6Address,remoteNetworks].filter(Boolean).join(', '):serverAllowed} onChange={e=>setServerAllowed(e.target.value)} placeholder="10.8.0.2/32, fd42:8::2/128"/><small className="field-hint">{peerMode==="site-to-site"?'Generated from tunnel addresses + Remote Networks.':'Cryptokey routing / inbound source validation.'}</small></label>
-        <label><span>Client routes</span><input value={clientAllowed} onChange={e=>setClientAllowed(e.target.value)} placeholder="172.20.0.0/16, fd00:20::/64, 192.168.150.0/24"/></label>
-        <label><span>Keepalive</span><input value={keepalive} onChange={e=>setKeepalive(e.target.value.replace(/\D/g,''))}/></label>
-        {editingPeerId?<><button className="btn primary" onClick={savePeer}>Save peer</button><button className="btn secondary" onClick={cancelEdit}>Cancel</button></>:<button className="btn primary" onClick={addPeer}>Add peer</button>}
-      </div>
-      <div className="wg-access-panel">
-        <div className="wg-access-head"><div><strong>Routing & Access Policy</strong><span>Allow this WireGuard network to selected Docker/LAN networks and optionally the Internet.</span></div><label className="wg-access-toggle"><input type="checkbox" checked={accessEnabled} onChange={e=>setAccessEnabled(e.target.checked)}/> Enabled</label></div>
-        <div className="wg-access-grid">
-          <div className="wg-access-section"><span className="section-label">DOCKER NETWORKS · IPv4 / IPv6</span>{(topology?.networks??[]).filter(n=>n.driver==="bridge").map(n=>{const cidrs=n.subnets.map(x=>x.subnet).filter((x):x is string=>Boolean(x));if(!cidrs.length)return null;const checked=cidrs.every(c=>accessDockerCidrs.includes(c));return <label className="wg-network-check" key={n.id}><input type="checkbox" checked={checked} onChange={e=>setAccessDockerCidrs(prev=>e.target.checked?[...new Set([...prev,...cidrs])]:prev.filter(c=>!cidrs.includes(c)))}/><span><strong>{n.name}</strong><small>{cidrs.map(c=>`${c.includes(':')?'IPv6':'IPv4'} ${c}`).join(" · ")}</small></span></label>})}</div>
-          <div className="wg-access-section"><label><span>LAN / custom CIDRs · IPv4 / IPv6</span><input value={accessLanCidrs} onChange={e=>setAccessLanCidrs(e.target.value)} placeholder="192.168.150.0/24, fd42:150::/64"/></label><span className="section-label">IPv4 INTERNET</span><label className="wg-network-check"><input type="checkbox" checked={accessInternet} onChange={e=>{setAccessInternet(e.target.checked);if(e.target.checked&&iface?.ipv6Address){setAccessInternet6(true);setAccessNat66(true)}}}/><span><strong>IPv4 Internet access</strong><small>Forward 0.0.0.0/0 traffic to WAN</small></span></label><label className="wg-network-check"><input type="checkbox" disabled={!accessInternet} checked={accessNat} onChange={e=>setAccessNat(e.target.checked)}/><span><strong>IPv4 NAT / MASQUERADE</strong><small>Usually required when upstream has no route to the VPN subnet</small></span></label><label><span>IPv4 WAN interface</span><select value={accessWan} onChange={e=>setAccessWan(e.target.value)}><option value="">Select WAN</option>{(status?.hostInterfaces??[]).map(x=><option key={x} value={x}>{x}{x===status?.defaultWanInterface?" · default IPv4":""}</option>)}</select></label><span className="section-label">IPv6 INTERNET {iface.ipv6Address?"· ENABLED":"· DISABLED"}</span><label className="wg-network-check"><input type="checkbox" disabled={!iface.ipv6Address} checked={Boolean(iface.ipv6Address)&&accessInternet6} onChange={e=>{setAccessInternet6(e.target.checked);if(e.target.checked)setAccessNat66(true)}}/><span><strong>IPv6 Internet access</strong><small>Forward ::/0 traffic to IPv6 WAN</small></span></label><label className="wg-network-check"><input type="checkbox" disabled={!accessInternet6} checked={accessNat66} onChange={e=>setAccessNat66(e.target.checked)}/><span><strong>NAT66 / MASQUERADE</strong><small>Optional. Prefer routed IPv6 when upstream routing is available.</small></span></label><label><span>IPv6 WAN interface</span><select value={accessWan6} onChange={e=>setAccessWan6(e.target.value)}><option value="">Select IPv6 WAN</option>{(status?.hostInterfaces??[]).map(x=><option key={x} value={x}>{x}{x===status?.defaultWanInterface6?" · default IPv6":""}</option>)}</select></label></div>
-        </div>
-        <div className="wg-access-footer"><span>Client AllowedIPs must include selected networks. Use <code>0.0.0.0/0</code> for IPv4 full tunnel and <code>::/0</code> for IPv6.</span><button className="btn primary" onClick={saveAccessPolicy}>Apply access policy</button></div>
-      </div>
-
-      <div className="wg-presets"><span>Client route presets:</span><button onClick={()=>setClientAllowed(dockerRoutes.join(', '))}>Docker networks</button><button onClick={()=>setClientAllowed('0.0.0.0/0')}>IPv4 full tunnel</button>{iface.ipv6Address&&<button onClick={()=>setClientAllowed('0.0.0.0/0, ::/0')}>Dual-stack full tunnel</button>}<button onClick={()=>setClientAllowed('')}>Clear</button></div>
-      {iface.peers.map(peer=>{
+      <div className="wg-peer-list-top">
+        <div className="wg-section-heading"><div><strong>Configured peers</strong><span>{iface.peers.length} peer{iface.peers.length===1?"":"s"} on {iface.name}</span></div></div>
+        {iface.peers.length===0&&<Empty text="No peers configured on this interface"/>}
+{iface.peers.map(peer=>{
         const rt=peer.runtime;
         return <div className="wg-peer-row wg-peer-runtime-row" key={peer.id}>
           <div className="wg-peer-main">
@@ -960,7 +1099,42 @@ function WireGuardPage({topology}:{topology:Topology|null}){
           </div>
           <div className="wg-peer-actions"><button className="btn secondary" onClick={()=>editPeer(peer)}>Edit</button><button className="btn secondary" onClick={()=>togglePeer(peer)}>{peer.enabled?'Disable':'Enable'}</button><button className="btn secondary" disabled={!peer.enabled} onClick={()=>openConfig(peer)}>Client config</button><button className="btn secondary" disabled={!peer.enabled} onClick={()=>showQr(peer)}><QrCode size={14}/> QR</button><button className="icon-danger" onClick={async()=>{await removeWgPeer(iface.name,peer.id);await load()}}><Trash2 size={15}/></button></div>
         </div>
-      })}</>}</div></div>
+      })}
+      </div>
+
+      <div className="wg-settings-grid">
+        <div className="wg-settings-card">
+          <div className="wg-section-heading"><div><strong>{editingPeerId?"Edit peer":"Add peer"}</strong><span>Tunnel identity, endpoint and client routing</span></div></div>
+          <div className="wg-peer-builder wg-peer-builder-v2">
+        <label><span>Peer type</span><select value={peerMode} onChange={e=>setPeerMode(e.target.value as any)}><option value="remote-access">Remote Access</option><option value="site-to-site">Site-to-Site</option></select></label>
+        <label><span>Name</span><input value={peerName} onChange={e=>setPeerName(e.target.value)}/></label>
+        <label><span>Client address</span><input value={clientAddress} onChange={e=>setClientAddress(e.target.value)}/></label>
+        {iface.ipv6Address&&<label><span>Client IPv6 address</span><input value={clientIpv6Address} onChange={e=>{setClientIpv6Address(e.target.value);const v4=serverAllowed.split(',').map(x=>x.trim()).filter(x=>x&&!x.includes(':'));setServerAllowed([...v4,e.target.value].filter(Boolean).join(', '))}} placeholder="fd42:8::2/128"/><small className="field-hint">Next address is generated automatically.</small></label>}
+        {peerMode==="site-to-site"&&<label><span>Remote networks</span><input value={remoteNetworks} onChange={e=>setRemoteNetworks(e.target.value)} placeholder="192.168.50.0/24, fd50::/64"/><small className="field-hint">DRM adds these to Server AllowedIPs, routes them via this peer and includes them in Docker access policy.</small></label>}
+        <label><span>Endpoint address</span><input value={endpointHost} onChange={e=>{setEndpointHostTouched(true);setEndpointHost(e.target.value)}} placeholder="vpn.example.com"/></label>
+        <label><span>Endpoint port</span><input value={endpointPort} onChange={e=>{setEndpointPortTouched(true);setEndpointPort(e.target.value.replace(/\D/g,''))}} placeholder={String(iface.listenPort)}/></label>
+        <label><span>DNS</span><input value={dns} onChange={e=>setDns(e.target.value)} placeholder="1.1.1.1, 8.8.8.8"/></label>
+        <label><span>Server AllowedIPs</span><input disabled={peerMode==="site-to-site"} value={peerMode==="site-to-site"?[clientAddress,clientIpv6Address,remoteNetworks].filter(Boolean).join(', '):serverAllowed} onChange={e=>setServerAllowed(e.target.value)} placeholder="10.8.0.2/32, fd42:8::2/128"/><small className="field-hint">{peerMode==="site-to-site"?'Generated from tunnel addresses + Remote Networks.':'Cryptokey routing / inbound source validation.'}</small></label>
+        <label><span>Client routes</span><input value={clientAllowed} onChange={e=>setClientAllowed(e.target.value)} placeholder="172.20.0.0/16, fd00:20::/64, 192.168.150.0/24"/></label>
+        <label><span>Keepalive</span><input value={keepalive} onChange={e=>setKeepalive(e.target.value.replace(/\D/g,''))}/></label>
+        {editingPeerId?<><button className="btn primary" onClick={savePeer}>Save peer</button><button className="btn secondary" onClick={cancelEdit}>Cancel</button></>:<button className="btn primary" onClick={addPeer}>Add peer</button>}
+      </div>
+          <div className="wg-presets"><span>Client route presets:</span><button onClick={()=>setClientAllowed(dockerRoutes.join(', '))}>Docker networks</button><button onClick={()=>setClientAllowed('0.0.0.0/0')}>IPv4 full tunnel</button>{iface.ipv6Address&&<button onClick={()=>setClientAllowed('0.0.0.0/0, ::/0')}>Dual-stack full tunnel</button>}<button onClick={()=>setClientAllowed('')}>Clear</button></div>
+        </div>
+
+        <div className="wg-settings-card">
+      <div className="wg-access-panel">
+        <div className="wg-access-head"><div><strong>Routing & Access Policy</strong><span>Allow this WireGuard network to selected Docker/LAN networks and optionally the Internet.</span></div><label className="wg-access-toggle"><input type="checkbox" checked={accessEnabled} onChange={e=>setAccessEnabled(e.target.checked)}/> Enabled</label></div>
+        <div className="wg-access-grid">
+          <div className="wg-access-section"><span className="section-label">DOCKER NETWORKS · IPv4 / IPv6</span>{(topology?.networks??[]).filter(n=>n.driver==="bridge").map(n=>{const cidrs=n.subnets.map(x=>x.subnet).filter((x):x is string=>Boolean(x));if(!cidrs.length)return null;const checked=cidrs.every(c=>accessDockerCidrs.includes(c));return <label className="wg-network-check" key={n.id}><input type="checkbox" checked={checked} onChange={e=>setAccessDockerCidrs(prev=>e.target.checked?[...new Set([...prev,...cidrs])]:prev.filter(c=>!cidrs.includes(c)))}/><span><strong>{n.name}</strong><small>{cidrs.map(c=>`${c.includes(':')?'IPv6':'IPv4'} ${c}`).join(" · ")}</small></span></label>})}</div>
+          <div className="wg-access-section"><label><span>LAN / custom CIDRs · IPv4 / IPv6</span><input value={accessLanCidrs} onChange={e=>setAccessLanCidrs(e.target.value)} placeholder="192.168.150.0/24, fd42:150::/64"/></label><span className="section-label">IPv4 INTERNET</span><label className="wg-network-check"><input type="checkbox" checked={accessInternet} onChange={e=>{setAccessInternet(e.target.checked);if(e.target.checked&&iface?.ipv6Address){setAccessInternet6(true);setAccessNat66(true)}}}/><span><strong>IPv4 Internet access</strong><small>Forward 0.0.0.0/0 traffic to WAN</small></span></label><label className="wg-network-check"><input type="checkbox" disabled={!accessInternet} checked={accessNat} onChange={e=>setAccessNat(e.target.checked)}/><span><strong>IPv4 NAT / MASQUERADE</strong><small>Usually required when upstream has no route to the VPN subnet</small></span></label><label><span>IPv4 WAN interface</span><select value={accessWan} onChange={e=>setAccessWan(e.target.value)}><option value="">Select WAN</option>{(status?.hostInterfaces??[]).map(x=><option key={x} value={x}>{x}{x===status?.defaultWanInterface?" · default IPv4":""}</option>)}</select></label><span className="section-label">IPv6 INTERNET {iface.ipv6Address?"· ENABLED":"· DISABLED"}</span><label className="wg-network-check"><input type="checkbox" disabled={!iface.ipv6Address} checked={Boolean(iface.ipv6Address)&&accessInternet6} onChange={e=>{setAccessInternet6(e.target.checked);if(e.target.checked)setAccessNat66(true)}}/><span><strong>IPv6 Internet access</strong><small>Forward ::/0 traffic to IPv6 WAN</small></span></label><label className="wg-network-check"><input type="checkbox" disabled={!accessInternet6} checked={accessNat66} onChange={e=>setAccessNat66(e.target.checked)}/><span><strong>NAT66 / MASQUERADE</strong><small>Optional. Prefer routed IPv6 when upstream routing is available.</small></span></label><label><span>IPv6 WAN interface</span><select value={accessWan6} onChange={e=>setAccessWan6(e.target.value)}><option value="">Select IPv6 WAN</option>{(status?.hostInterfaces??[]).map(x=><option key={x} value={x}>{x}{x===status?.defaultWanInterface6?" · default IPv6":""}</option>)}</select></label></div>
+        </div>
+        <div className="wg-access-footer"><span>Client AllowedIPs must include selected networks. Use <code>0.0.0.0/0</code> for IPv4 full tunnel and <code>::/0</code> for IPv6.</span><button className="btn primary" onClick={saveAccessPolicy}>Apply access policy</button></div>
+      </div>
+        </div>
+      </div>
+
+</>}</div></div>
     {config&&<div className="panel"><PanelTitle title="Generated client configuration" subtitle="Private key is sensitive; download and QR are available only to Operator/Administrator"/><pre className="wg-config">{config}</pre><div className="wg-config-actions"><button className="btn secondary" onClick={()=>navigator.clipboard.writeText(config)}>Copy config</button><button className="btn primary" onClick={downloadConfig}><Download size={14}/> Download .conf</button>{qrSvg&&<button className="btn secondary" onClick={()=>setQrSvg('')}>Hide QR</button>}</div>{qrSvg&&<div className="wg-qr"><div dangerouslySetInnerHTML={{__html:qrSvg}}/><span>Scan with the WireGuard mobile app</span></div>}</div>}
   </div>
 }

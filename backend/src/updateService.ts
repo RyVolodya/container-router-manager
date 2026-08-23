@@ -1,4 +1,4 @@
-const CURRENT_VERSION = "0.9.9";
+const CURRENT_VERSION = "0.10.12";
 const cacheTtlMs = Number(process.env.GITHUB_UPDATE_CACHE_MS ?? 15 * 60 * 1000);
 
 type GithubRelease = {

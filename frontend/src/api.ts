@@ -18,6 +18,10 @@ function mutationSuccessMessage(url:string,method:string){
   }
   if(url==="/api/firewall/rules" && method==="POST") return "Firewall rule added";
   if(url.startsWith("/api/firewall/rules/") && method==="DELETE") return "Firewall rule deleted";
+  if(url==="/api/firewall/access-rules" && method==="POST") return "Container access rule added";
+  if(url==="/api/firewall/access-rules/reorder") return "Container access rule order updated";
+  if(url.startsWith("/api/firewall/access-rules/") && method==="PUT") return "Container access rule updated";
+  if(url.startsWith("/api/firewall/access-rules/") && method==="DELETE") return "Container access rule deleted";
   if(url==="/api/firewall/host-input-rules" && method==="POST") return "Host INPUT rule added";
   if(url.startsWith("/api/firewall/host-input-rules/") && method==="DELETE") return "Host INPUT rule deleted";
   if(url==="/api/firewall/published-port-rules" && method==="POST") return "Published-port rule added";
@@ -131,6 +135,10 @@ export const getWgClientQr=(name:string,id:string)=>apiFetch(`/api/wireguard/int
 
 export const createHostInputRule=(rule:any)=>apiFetch("/api/firewall/host-input-rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removeHostInputRule=(id:string)=>apiFetch(`/api/firewall/host-input-rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const createAccessRule=(rule:any)=>apiFetch("/api/firewall/access-rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
+export const updateAccessRule=(id:string,rule:any)=>apiFetch(`/api/firewall/access-rules/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
+export const removeAccessRule=(id:string)=>apiFetch(`/api/firewall/access-rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const reorderAccessRules=(ids:string[])=>apiFetch("/api/firewall/access-rules/reorder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});
 export const setWgAccessPolicy=(name:string,body:any)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/access`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 
 export const setWgIpv6=(name:string,body:any)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/ipv6`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});

@@ -5,7 +5,7 @@ import { authenticate, adminResetPassword, changeOwnPassword, createUser, delete
 import { getContainerNetworkStats, getDockerInfo, getTopology, listContainers, listNetworks } from "./dockerService.js";
 import { addManagedRoute, deleteManagedRoute, getRoutingStatus, restoreManagedRoutes, setIpForward, setIpForward6, updateManagedRoute } from "./routingService.js";
 import { addWireGuardPeer, createWireGuardInterface, deleteWireGuardInterface, deleteWireGuardPeer, getClientConfig, getClientConfigQrSvg, getWireGuardStatus, restoreWireGuard, setWireGuardAccessPolicy, configureWireGuardIpv6, updateWireGuardPeer, setWireGuardPeerEnabled } from "./wireguardService.js";
-import { addFirewallRule, addHostInputRule, addPublishedPortRule, applyFirewall, deleteFirewallRule, deleteHostInputRule, deletePublishedPortRule, disableFirewall, getFirewallStatus, rollbackFirewall } from "./firewallService.js";
+import { addFirewallRule, addHostInputRule, addPublishedPortRule, addContainerAccessRule, updateContainerAccessRule, deleteContainerAccessRule, reorderContainerAccessRules, applyFirewall, deleteFirewallRule, deleteHostInputRule, deletePublishedPortRule, disableFirewall, getFirewallStatus, rollbackFirewall } from "./firewallService.js";
 import { getUpdateStatus } from "./updateService.js";
 
 const app = express();
@@ -16,7 +16,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "64kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "docker-router-manager", version: "0.9.9" });
+  res.json({ status: "ok", service: "docker-router-manager", version: "0.10.12" });
 });
 
 
@@ -309,6 +309,12 @@ app.get("/api/stats/network", async (_req, res) => {
 
 app.post("/api/firewall/host-input-rules", async (req,res)=>{try{res.status(201).json(await addHostInputRule(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.delete("/api/firewall/host-input-rules/:id", async (req,res)=>{try{await deleteHostInputRule(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
+
+app.post("/api/firewall/access-rules", async (req,res)=>{try{res.status(201).json(await addContainerAccessRule(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.put("/api/firewall/access-rules/:id", async (req,res)=>{try{res.json(await updateContainerAccessRule(paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.delete("/api/firewall/access-rules/:id", async (req,res)=>{try{await deleteContainerAccessRule(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
+app.post("/api/firewall/access-rules/reorder", async (req,res)=>{try{res.json(await reorderContainerAccessRules(Array.isArray(req.body?.ids)?req.body.ids.map(String):[]))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+
 
 app.get('/api/routing/status', async (_req,res)=>{try{res.json(await getRoutingStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/routing/ip-forward', async (req,res)=>{try{res.json(await setIpForward(Boolean(req.body.enabled)))}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});

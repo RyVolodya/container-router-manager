@@ -1,6 +1,6 @@
 {
   "name": "docker-router-manager-frontend",
-  "version": "0.9.9",
+  "version": "0.10.12",
   "private": true,
   "type": "module",
   "scripts": {

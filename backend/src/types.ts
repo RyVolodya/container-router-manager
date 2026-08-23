@@ -83,11 +83,34 @@ export interface FirewallRule {
   description?: string;
 }
 
+
+export type AccessSelectorType = "custom" | "docker-network" | "container" | "wireguard";
+
+export interface AccessSelector {
+  type: AccessSelectorType;
+  refId?: string | null;
+  value?: string | null;
+  label?: string | null;
+}
+
+export interface ContainerAccessRule {
+  id: string;
+  family: FirewallFamily;
+  source: AccessSelector;
+  destination: AccessSelector;
+  protocol: FirewallProtocol;
+  destinationPort?: number | null;
+  action: FirewallAction;
+  enabled: boolean;
+  description?: string;
+}
+
 export interface FirewallConfig {
   enabled: boolean;
   rules: FirewallRule[];
   publishedPortRules: PublishedPortFirewallRule[];
   hostInputRules: HostInputFirewallRule[];
+  accessRules: ContainerAccessRule[];
   updatedAt: string;
 }
 
@@ -108,6 +131,7 @@ export interface PublishedPortFirewallRule {
   hostIp: string;
   containerPort: number;
   sourceCidr: string;
+  destinationCidr?: string;
   action: FirewallAction;
   enabled: boolean;
   description?: string;

@@ -73,12 +73,31 @@ export type HostInputRule={
   id:string;family?:4|6|"both";interfaceName:string;localAddress?:string|null;protocol:"all"|"tcp"|"udp"|"icmp"|"icmpv6";
   destinationPort?:number|null;sourceCidr:string;action:"ACCEPT"|"DROP"|"REJECT";enabled:boolean;description?:string;
 };
+
+export type AccessSelectorType="custom"|"docker-network"|"container"|"wireguard";
+export type AccessSelector={type:AccessSelectorType;refId?:string|null;value?:string|null;label?:string|null};
+export type ContainerAccessRule={
+  id:string;
+  family:4|6|"both";
+  source:AccessSelector;
+  destination:AccessSelector;
+  protocol:"all"|"tcp"|"udp"|"icmp"|"icmpv6";
+  destinationPort?:number|null;
+  action:"ACCEPT"|"DROP"|"REJECT";
+  enabled:boolean;
+  description?:string;
+};
+
 export type FirewallStatus = {
   engine:string;managedChain:string;
-  config:{enabled:boolean;rules:FirewallRule[];publishedPortRules:Array<{id:string;family?:4|6;containerId:string;containerName:string;protocol:"tcp"|"udp";publishedPort:number;hostIp:string;containerPort:number;sourceCidr:string;action:"ACCEPT"|"DROP"|"REJECT";enabled:boolean;description?:string}>;hostInputRules:HostInputRule[];updatedAt:string};
-  applied:{enabled:boolean;rules:FirewallRule[];publishedPortRules:Array<{id:string;family?:4|6;containerId:string;containerName:string;protocol:"tcp"|"udp";publishedPort:number;hostIp:string;containerPort:number;sourceCidr:string;action:"ACCEPT"|"DROP"|"REJECT";enabled:boolean;description?:string}>;hostInputRules:HostInputRule[];updatedAt:string};
+  config:{enabled:boolean;rules:FirewallRule[];publishedPortRules:Array<{id:string;family?:4|6;containerId:string;containerName:string;protocol:"tcp"|"udp";publishedPort:number;hostIp:string;containerPort:number;sourceCidr:string;destinationCidr?:string;action:"ACCEPT"|"DROP"|"REJECT";enabled:boolean;description?:string}>;hostInputRules:HostInputRule[];accessRules:ContainerAccessRule[];updatedAt:string};
+  applied:{enabled:boolean;rules:FirewallRule[];publishedPortRules:Array<{id:string;family?:4|6;containerId:string;containerName:string;protocol:"tcp"|"udp";publishedPort:number;hostIp:string;containerPort:number;sourceCidr:string;destinationCidr?:string;action:"ACCEPT"|"DROP"|"REJECT";enabled:boolean;description?:string}>;hostInputRules:HostInputRule[];accessRules:ContainerAccessRule[];updatedAt:string};
   pendingChanges:boolean;lastAppliedAt:string|null;
   networkRefs:Array<{id:string;name:string;subnets:string[]}>;
+  containerRefs:Array<{id:string;name:string;addresses:Array<{family:4|6;address:string;networkName:string}>}>;
+  wireguardRefs:Array<{id:string;interfaceName:string;name:string;cidr:string;family:4|6;kind:"tunnel"|"peer"|"remote"}>;
+  accessCounters:Record<string,{packets:number;bytes:number}>;
+  ruleCounters:Record<string,{packets:number;bytes:number}>;
   publishedPortRefs:Array<{containerId:string;containerName:string;protocol:"tcp"|"udp";publishedPort:number;hostIp:string;containerPort:number}>;
   hostInterfaces:Array<{name:string;addresses:string[]}>;
   defaultWanInterface:string|null;

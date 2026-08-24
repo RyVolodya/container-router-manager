@@ -15,7 +15,7 @@ Manage WireGuard**
 ![WireGuard](https://img.shields.io/badge/WireGuard-supported-88171A?logo=wireguard&logoColor=white)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-**Current release: v0.10.0**
+**Current release: v0.10.10**
 
 [Quick Start](#-quick-start) · [Features](#-what-can-drm-do) ·
 [Screenshots](#-screenshots) · [Security](#-security-considerations) ·

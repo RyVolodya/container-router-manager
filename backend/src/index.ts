@@ -4,19 +4,32 @@ import { rateLimit } from "express-rate-limit";
 import { authenticate, adminResetPassword, changeOwnPassword, createUser, deleteUser, destroySession, getSession, initializeAuth, listUsers, secureCompare, updateUserRole } from "./authService.js";
 import { getContainerNetworkStats, getDockerInfo, getTopology, listContainers, listNetworks } from "./dockerService.js";
 import { addManagedRoute, deleteManagedRoute, getRoutingStatus, restoreManagedRoutes, setIpForward, setIpForward6, updateManagedRoute } from "./routingService.js";
-import { addWireGuardPeer, createWireGuardInterface, deleteWireGuardInterface, deleteWireGuardPeer, getClientConfig, getClientConfigQrSvg, getWireGuardStatus, restoreWireGuard, setWireGuardAccessPolicy, configureWireGuardIpv6, updateWireGuardPeer, setWireGuardPeerEnabled } from "./wireguardService.js";
-import { addFirewallRule, addHostInputRule, addPublishedPortRule, addContainerAccessRule, updateContainerAccessRule, deleteContainerAccessRule, reorderContainerAccessRules, applyFirewall, deleteFirewallRule, deleteHostInputRule, deletePublishedPortRule, disableFirewall, getFirewallStatus, rollbackFirewall } from "./firewallService.js";
+import { addWireGuardPeer, createWireGuardInterface, updateWireGuardInterface, deleteWireGuardInterface, deleteWireGuardPeer, getClientConfig, getClientConfigQrSvg, getWireGuardStatus, restoreWireGuard, setWireGuardAccessPolicy, configureWireGuardIpv6, updateWireGuardPeer, setWireGuardPeerEnabled } from "./wireguardService.js";
+import { addFirewallRule, addHostInputRule, addPublishedPortRule, addContainerAccessRule, updateContainerAccessRule, deleteContainerAccessRule, reorderContainerAccessRules, reorderFirewallNetworkRules, reorderPublishedPortRules, reorderHostInputRules, applyFirewall, deleteFirewallRule, deleteHostInputRule, deletePublishedPortRule, updatePublishedPortRule, disableFirewall, getFirewallStatus, rollbackFirewall, refreshDynamicFirewallRules, startDynamicFirewallReconciler } from "./firewallService.js";
 import { getUpdateStatus } from "./updateService.js";
+import { createDockerNetwork, deleteDockerNetwork, suggestBridgeSubnet, getContainerNetworkIpInfo, connectContainerNetwork, disconnectContainerNetwork, changeContainerNetworkIpv4, getDockerNetworkParents } from "./networkService.js";
+import { deleteManagedVlan, ensureManagedVlan, listHostInterfaces, restoreManagedVlans } from "./vlanService.js";
+import { deleteContainerNetworkPolicy, getContainerNetworkPolicy, saveCurrentContainerNetworkPolicy, startContainerNetworkPolicyReconciler } from "./containerNetworkPolicyService.js";
+import { addNatRule, deleteNatRule, getNatStatus, startNatReconciler, updateNatRule, refreshNatRules } from "./natService.js";
+import { applyHostInterfaceChange, confirmHostInterfaceChange, deleteHostVlanInterface, forgetManagedHostInterface, getHostInterfaceManagementStatus, restoreManagedHostInterfaces, rollbackPendingInterfaceChange } from "./hostInterfaceService.js";
+import { createVrf, deleteVrf, getVrfStatus, restoreVrfs, updateVrf } from "./vrfService.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 8080);
+
+async function refreshFirewallAfterDockerNetworkChange(){
+  try{await refreshDynamicFirewallRules(true);}
+  catch(error){console.warn("DRM firewall refresh after Docker network change failed",error);}
+  try{await refreshNatRules(true);}
+  catch(error){console.warn("DRM NAT refresh after Docker network change failed",error);}
+}
 
 app.disable("x-powered-by");
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "64kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "docker-router-manager", version: "0.10.12" });
+  res.json({ status: "ok", service: "docker-router-manager", version: "0.16.9" });
 });
 
 
@@ -152,8 +165,13 @@ app.delete("/api/management/users/:id", requireRole("administrator"), async (req
 
 // Read-only GET endpoints are available to all authenticated roles.
 // Network-changing endpoints are restricted to Administrator/Operator.
+app.use("/api/networks", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
+app.use("/api/containers", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
 app.use("/api/firewall", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
 app.use("/api/routing", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
+app.use("/api/vrf", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
+app.use("/api/nat", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
+app.use("/api/interfaces", (req,res,next)=> ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next));
 app.use("/api/wireguard", (req,res,next)=> {
   if (req.path.endsWith("/config") || req.path.endsWith("/qr")) return requireRole("administrator","operator")(req,res,next);
   return ["GET","HEAD","OPTIONS"].includes(req.method) ? next() : requireRole("administrator","operator")(req,res,next);
@@ -187,10 +205,117 @@ app.get("/api/networks", async (_req, res) => {
   }
 });
 
+app.get("/api/networks/host-interfaces", async (_req,res)=>{
+  try{res.json(await getDockerNetworkParents())}catch(error){res.status(500).json({error:"host_interfaces_failed",message:error instanceof Error?error.message:String(error)})}
+});
+app.get("/api/networks/vlans", async (_req,res)=>{
+  try{res.json((await listHostInterfaces()).filter((x:any)=>x.kind==="vlan"))}catch(error){res.status(500).json({error:"vlan_list_failed",message:error instanceof Error?error.message:String(error)})}
+});
+app.post("/api/networks/vlans", async (req,res)=>{
+  try{res.status(201).json(await ensureManagedVlan(req.body?.parent,req.body?.vlanId))}catch(error){res.status(400).json({error:"vlan_create_failed",message:error instanceof Error?error.message:String(error)})}
+});
+app.delete("/api/networks/vlans/:name", async (req,res)=>{
+  try{await deleteManagedVlan(paramString(req.params.name));res.status(204).end()}catch(error){res.status(400).json({error:"vlan_delete_failed",message:error instanceof Error?error.message:String(error)})}
+});
+
+app.get("/api/networks/suggest", async (req, res) => {
+  try {
+    const pool=String(req.query.pool??"10.0.0.0/8");
+    const prefixLength=Number(req.query.prefixLength??24);
+    res.json(await suggestBridgeSubnet(pool,prefixLength));
+  } catch (error) {
+    res.status(400).json({ error:"network_suggestion_failed", message:error instanceof Error?error.message:String(error) });
+  }
+});
+
+app.post("/api/networks", async (req, res) => {
+  try {
+    const result=await createDockerNetwork(req.body);
+    await refreshFirewallAfterDockerNetworkChange();
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(400).json({ error:"network_create_failed", message:error instanceof Error?error.message:String(error) });
+  }
+});
+
+app.delete("/api/networks/:id", async (req, res) => {
+  try {
+    await deleteDockerNetwork(paramString(req.params.id));
+    await refreshFirewallAfterDockerNetworkChange();
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({ error:"network_delete_failed", message:error instanceof Error?error.message:String(error) });
+  }
+});
+
 app.get("/api/containers", async (_req, res) => {
   try { res.json(await listContainers()); }
   catch (error) {
     res.status(502).json({ error: "docker_api_error", message: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+
+app.get("/api/containers/:containerId/network-policy", async (req, res) => {
+  try {
+    res.json(await getContainerNetworkPolicy(paramString(req.params.containerId)));
+  } catch (error) {
+    res.status(400).json({error:"container_network_policy_read_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.put("/api/containers/:containerId/network-policy", async (req, res) => {
+  try {
+    res.json(await saveCurrentContainerNetworkPolicy(paramString(req.params.containerId)));
+  } catch (error) {
+    res.status(400).json({error:"container_network_policy_save_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.delete("/api/containers/:containerId/network-policy", async (req, res) => {
+  try {
+    await deleteContainerNetworkPolicy(paramString(req.params.containerId));
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({error:"container_network_policy_delete_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.get("/api/containers/:containerId/networks/:networkId/ip-info", async (req, res) => {
+  try {
+    res.json(await getContainerNetworkIpInfo(paramString(req.params.networkId),paramString(req.params.containerId)));
+  } catch (error) {
+    res.status(400).json({error:"container_network_ip_info_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.post("/api/containers/:containerId/networks/:networkId/connect", async (req, res) => {
+  try {
+    const result=await connectContainerNetwork(paramString(req.params.containerId),paramString(req.params.networkId),req.body);
+    await refreshFirewallAfterDockerNetworkChange();
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(400).json({error:"container_network_connect_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.post("/api/containers/:containerId/networks/:networkId/disconnect", async (req, res) => {
+  try {
+    const result=await disconnectContainerNetwork(paramString(req.params.containerId),paramString(req.params.networkId),Boolean(req.body?.force));
+    await refreshFirewallAfterDockerNetworkChange();
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({error:"container_network_disconnect_failed",message:error instanceof Error?error.message:String(error)});
+  }
+});
+
+app.put("/api/containers/:containerId/networks/:networkId/ip", async (req, res) => {
+  try {
+    const result=await changeContainerNetworkIpv4(paramString(req.params.containerId),paramString(req.params.networkId),req.body);
+    await refreshFirewallAfterDockerNetworkChange();
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({error:"container_network_ip_change_failed",message:error instanceof Error?error.message:String(error)});
   }
 });
 
@@ -266,6 +391,14 @@ app.post("/api/firewall/published-port-rules", async (req, res) => {
   }
 });
 
+app.put("/api/firewall/published-port-rules/:id", async (req, res) => {
+  try {
+    res.json(await updatePublishedPortRule(paramString(req.params.id), req.body));
+  } catch (error) {
+    res.status(400).json({ error: "invalid_published_port_rule", message: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.delete("/api/firewall/published-port-rules/:id", async (req, res) => {
   try {
     await deletePublishedPortRule(paramString(req.params.id));
@@ -314,7 +447,18 @@ app.post("/api/firewall/access-rules", async (req,res)=>{try{res.status(201).jso
 app.put("/api/firewall/access-rules/:id", async (req,res)=>{try{res.json(await updateContainerAccessRule(paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.delete("/api/firewall/access-rules/:id", async (req,res)=>{try{await deleteContainerAccessRule(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
 app.post("/api/firewall/access-rules/reorder", async (req,res)=>{try{res.json(await reorderContainerAccessRules(Array.isArray(req.body?.ids)?req.body.ids.map(String):[]))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.post("/api/firewall/rules/reorder", async (req,res)=>{try{res.json(await reorderFirewallNetworkRules(Array.isArray(req.body?.ids)?req.body.ids.map(String):[]))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.post("/api/firewall/published-port-rules/reorder", async (req,res)=>{try{res.json(await reorderPublishedPortRules(Array.isArray(req.body?.ids)?req.body.ids.map(String):[]))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.post("/api/firewall/host-input-rules/reorder", async (req,res)=>{try{res.json(await reorderHostInputRules(Array.isArray(req.body?.ids)?req.body.ids.map(String):[]))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 
+
+
+app.get('/api/interfaces/status', async (_req,res)=>{try{res.json(await getHostInterfaceManagementStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
+app.post('/api/interfaces/apply', async (req,res)=>{try{res.json(await applyHostInterfaceChange(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.post('/api/interfaces/confirm', async (req,res)=>{try{res.json(await confirmHostInterfaceChange(req.body?.token))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.post('/api/interfaces/rollback', async (req,res)=>{try{res.json(await rollbackPendingInterfaceChange(req.body?.token))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.delete('/api/interfaces/:name/managed', async (req,res)=>{try{res.json(await forgetManagedHostInterface(paramString(req.params.name)))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.delete('/api/interfaces/vlans/:name', async (req,res)=>{try{res.json(await deleteHostVlanInterface(paramString(req.params.name)))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 
 app.get('/api/routing/status', async (_req,res)=>{try{res.json(await getRoutingStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/routing/ip-forward', async (req,res)=>{try{res.json(await setIpForward(Boolean(req.body.enabled)))}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
@@ -322,9 +466,19 @@ app.post('/api/routing/ip-forward6', async (req,res)=>{try{res.json(await setIpF
 app.post('/api/routing/routes', async (req,res)=>{try{res.status(201).json(await addManagedRoute(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.put('/api/routing/routes/:id', async (req,res)=>{try{res.json(await updateManagedRoute(paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.delete('/api/routing/routes/:id', async (req,res)=>{try{await deleteManagedRoute(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
+app.get('/api/vrf/status',async(_req,res)=>{try{res.json(await getVrfStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
+app.post('/api/vrf',async(req,res)=>{try{res.status(201).json(await createVrf(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.put('/api/vrf/:id',async(req,res)=>{try{res.json(await updateVrf(paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.delete('/api/vrf/:id',async(req,res)=>{try{await deleteVrf(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
+
+app.get('/api/nat/status', async (_req,res)=>{try{res.json(await getNatStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
+app.post('/api/nat/rules', async (req,res)=>{try{res.status(201).json(await addNatRule(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.put('/api/nat/rules/:id', async (req,res)=>{try{res.json(await updateNatRule(paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.delete('/api/nat/rules/:id', async (req,res)=>{try{await deleteNatRule(paramString(req.params.id));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
 
 app.get('/api/wireguard/status', async (_req,res)=>{try{res.json(await getWireGuardStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/wireguard/interfaces', async (req,res)=>{try{res.status(201).json(await createWireGuardInterface(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
+app.put('/api/wireguard/interfaces/:name', async (req,res)=>{try{res.json(await updateWireGuardInterface(paramString(req.params.name),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.delete('/api/wireguard/interfaces/:name', async (req,res)=>{try{await deleteWireGuardInterface(paramString(req.params.name));res.status(204).end()}catch(e){res.status(404).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/wireguard/interfaces/:name/peers', async (req,res)=>{try{res.status(201).json(await addWireGuardPeer(paramString(req.params.name),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.put('/api/wireguard/interfaces/:name/peers/:id', async (req,res)=>{try{res.json(await updateWireGuardPeer(paramString(req.params.name),paramString(req.params.id),req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
@@ -335,6 +489,10 @@ app.delete('/api/wireguard/interfaces/:name/peers/:id', async (req,res)=>{try{aw
 app.get('/api/wireguard/interfaces/:name/peers/:id/config', async (req,res)=>{try{res.type('text/plain').send(await getClientConfig(paramString(req.params.name),paramString(req.params.id)))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.get('/api/wireguard/interfaces/:name/peers/:id/qr', async (req,res)=>{try{res.type('image/svg+xml').send(await getClientConfigQrSvg(paramString(req.params.name),paramString(req.params.id)))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 
-Promise.all([initializeAuth(),restoreManagedRoutes(),restoreWireGuard()]).catch(e=>console.warn('DRM startup restore warning',e));
+Promise.all([initializeAuth(),restoreManagedVlans()]).then(async()=>{await restoreManagedHostInterfaces();await restoreVrfs();await Promise.all([restoreManagedRoutes(),restoreWireGuard()]);}).then(()=>{
+  startContainerNetworkPolicyReconciler();
+  startDynamicFirewallReconciler();
+  startNatReconciler();
+}).catch(e=>console.warn('DRM startup restore warning',e));
 
 app.listen(port, "0.0.0.0", () => console.log(`DRM backend listening on ${port}`));

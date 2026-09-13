@@ -1,4 +1,4 @@
-import type { Topology } from "./types";
+import type { Topology, NatStatus, HostInterfaceManagementStatus } from "./types";
 
 let csrfToken = "";
 export function setCsrfToken(token:string){ csrfToken=token; }
@@ -16,6 +16,13 @@ function mutationSuccessMessage(url:string,method:string){
     if(url.endsWith("/reset-password")) return "User password reset";
     if(method==="POST") return "User added";
   }
+  if(url==="/api/networks" && method==="POST") return "Docker network created";
+  if(url.startsWith("/api/networks/") && method==="DELETE") return "Docker network deleted";
+  if(/\/api\/containers\/[^/]+\/networks\/[^/]+\/connect$/.test(url)) return "Network connected to container";
+  if(/\/api\/containers\/[^/]+\/networks\/[^/]+\/disconnect$/.test(url)) return "Network disconnected from container";
+  if(/\/api\/containers\/[^/]+\/networks\/[^/]+\/ip$/.test(url) && method==="PUT") return "Container IP address updated";
+  if(/\/api\/containers\/[^/]+\/network-policy$/.test(url) && method==="PUT") return "Persistent network configuration saved";
+  if(/\/api\/containers\/[^/]+\/network-policy$/.test(url) && method==="DELETE") return "Persistent network configuration disabled";
   if(url==="/api/firewall/rules" && method==="POST") return "Firewall rule added";
   if(url.startsWith("/api/firewall/rules/") && method==="DELETE") return "Firewall rule deleted";
   if(url==="/api/firewall/access-rules" && method==="POST") return "Container access rule added";
@@ -34,6 +41,14 @@ function mutationSuccessMessage(url:string,method:string){
   if(url.startsWith("/api/routing/routes/") && method==="DELETE") return "Route deleted";
   if(url==="/api/routing/ip-forward") return "IPv4 forwarding updated";
   if(url==="/api/routing/ip-forward6") return "IPv6 forwarding updated";
+  if(url==="/api/interfaces/apply") return "Interface change applied temporarily";
+  if(url==="/api/interfaces/confirm") return "Interface configuration confirmed";
+  if(url==="/api/interfaces/rollback") return "Interface configuration rolled back";
+  if(url.startsWith("/api/interfaces/vlans/") && method==="DELETE") return "VLAN interface deleted";
+  if(url.startsWith("/api/interfaces/") && url.endsWith("/managed") && method==="DELETE") return "Interface removed from DRM management";
+  if(url==="/api/nat/rules" && method==="POST") return "NAT rule added";
+  if(url.startsWith("/api/nat/rules/") && method==="PUT") return "NAT rule updated";
+  if(url.startsWith("/api/nat/rules/") && method==="DELETE") return "NAT rule deleted";
   if(url==="/api/wireguard/interfaces" && method==="POST") return "WireGuard interface created";
   if(/^\/api\/wireguard\/interfaces\/[^/]+$/.test(url) && method==="DELETE") return "WireGuard interface deleted";
   if(/\/wireguard\/interfaces\/[^/]+\/peers$/.test(url) && method==="POST") return "WireGuard peer added";
@@ -111,12 +126,35 @@ export const resetManagementPassword=(id:string,password:string)=>apiFetch(`/api
 export const removeManagementUser=(id:string)=>apiFetch(`/api/management/users/${encodeURIComponent(id)}`,{method:"DELETE"});
 
 export async function getTopology(signal?: AbortSignal): Promise<Topology> {return apiFetch("/api/topology",{signal});}
+export type NetworkSuggestion={pool:string;prefixLength:number;subnet:string;gateway:string;conflicts:string[]};
+export type HostNetworkInterface={name:string;kind:string|null;state:string;up:boolean;vlanId:number|null;parent:string|null;managed:boolean};
+export const getDockerNetworkParents=():Promise<HostNetworkInterface[]>=>apiFetch("/api/networks/host-interfaces");
+export const getManagedVlans=():Promise<HostNetworkInterface[]>=>apiFetch("/api/networks/vlans");
+export const createManagedVlan=(parent:string,vlanId:number)=>apiFetch("/api/networks/vlans",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent,vlanId})});
+export const removeManagedVlan=(name:string)=>apiFetch(`/api/networks/vlans/${encodeURIComponent(name)}`,{method:"DELETE"});
+export const suggestDockerNetworkSubnet=(pool:string,prefixLength:number):Promise<NetworkSuggestion>=>apiFetch(`/api/networks/suggest?pool=${encodeURIComponent(pool)}&prefixLength=${prefixLength}`);
+export const createDockerNetwork=(body:any)=>apiFetch("/api/networks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const removeDockerNetwork=(id:string)=>apiFetch(`/api/networks/${encodeURIComponent(id)}`,{method:"DELETE"});
+export type ContainerNetworkIpInfo={networkId:string;networkName:string;subnet:string;gateway:string|null;usedIps:Array<{ip:string;containerId:string;containerName:string}>;nextFreeIp:string|null};
+export const getContainerNetworkIpInfo=(containerId:string,networkId:string):Promise<ContainerNetworkIpInfo>=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/networks/${encodeURIComponent(networkId)}/ip-info`);
+export const connectContainerNetwork=(containerId:string,networkId:string,body:any)=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/networks/${encodeURIComponent(networkId)}/connect`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const disconnectContainerNetwork=(containerId:string,networkId:string,force=false)=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/networks/${encodeURIComponent(networkId)}/disconnect`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({force})});
+export const changeContainerNetworkIp=(containerId:string,networkId:string,body:any)=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/networks/${encodeURIComponent(networkId)}/ip`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export type ContainerNetworkPolicyRuntime={state:"idle"|"waiting"|"applied"|"error";lastCheckedAt:string|null;lastAppliedAt:string|null;lastSeenContainerId:string|null;message:string|null};
+export type ContainerNetworkPolicy={id:string;enabled:boolean;identity:{kind:"compose"|"name";key:string;project?:string;service?:string;containerNumber?:string;name?:string};displayName:string;desiredNetworks:Array<{networkName:string;ipv4Address:string|null}>;createdAt:string;updatedAt:string;runtime:ContainerNetworkPolicyRuntime};
+export type ContainerNetworkPolicyResponse={supportedIdentity:{kind:"compose"|"name";key:string;project?:string;service?:string;containerNumber?:string;name?:string};policy:ContainerNetworkPolicy|null};
+export const getContainerNetworkPolicy=(containerId:string):Promise<ContainerNetworkPolicyResponse>=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/network-policy`);
+export const saveContainerNetworkPolicy=(containerId:string):Promise<ContainerNetworkPolicy>=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/network-policy`,{method:"PUT"});
+export const removeContainerNetworkPolicy=(containerId:string)=>apiFetch(`/api/containers/${encodeURIComponent(containerId)}/network-policy`,{method:"DELETE"});
 export const getFirewallStatus=()=>apiFetch("/api/firewall/status");
 export const createFirewallRule=(rule:any)=>apiFetch("/api/firewall/rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removeFirewallRule=(id:string)=>apiFetch(`/api/firewall/rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const reorderFirewallRules=(ids:string[])=>apiFetch("/api/firewall/rules/reorder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});
 export const firewallAction=(action:"apply"|"disable"|"rollback")=>apiFetch(`/api/firewall/${action}`,{method:"POST"});
 export const createPublishedPortRule=(rule:any)=>apiFetch("/api/firewall/published-port-rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
+export const updatePublishedPortRule=(id:string,rule:any)=>apiFetch(`/api/firewall/published-port-rules/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removePublishedPortRule=(id:string)=>apiFetch(`/api/firewall/published-port-rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const reorderPublishedPortRules=(ids:string[])=>apiFetch("/api/firewall/published-port-rules/reorder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});
 export const getNetworkStats=()=>apiFetch("/api/stats/network");
 export const getRoutingStatus=()=>apiFetch("/api/routing/status");
 export const setRoutingForward=(enabled:boolean)=>apiFetch("/api/routing/ip-forward",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})});
@@ -124,8 +162,13 @@ export const setRoutingForward6=(enabled:boolean)=>apiFetch("/api/routing/ip-for
 export const createRoute=(route:any)=>apiFetch("/api/routing/routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(route)});
 export const updateRoute=(id:string,route:any)=>apiFetch(`/api/routing/routes/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(route)});
 export const removeRoute=(id:string)=>apiFetch(`/api/routing/routes/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const getVrfStatus=()=>apiFetch("/api/vrf/status");
+export const createVrf=(body:any)=>apiFetch("/api/vrf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const updateVrf=(id:string,body:any)=>apiFetch(`/api/vrf/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const removeVrf=(id:string)=>apiFetch(`/api/vrf/${encodeURIComponent(id)}`,{method:"DELETE"});
 export const getWireGuard=()=>apiFetch("/api/wireguard/status");
 export const createWgInterface=(body:any)=>apiFetch("/api/wireguard/interfaces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const updateWgInterface=(name:string,body:any)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 export const removeWgInterface=(name:string)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}`,{method:"DELETE"});
 export const createWgPeer=(name:string,body:any)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/peers`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 export const removeWgPeer=(name:string,id:string)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/peers/${encodeURIComponent(id)}`,{method:"DELETE"});
@@ -135,6 +178,7 @@ export const getWgClientQr=(name:string,id:string)=>apiFetch(`/api/wireguard/int
 
 export const createHostInputRule=(rule:any)=>apiFetch("/api/firewall/host-input-rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removeHostInputRule=(id:string)=>apiFetch(`/api/firewall/host-input-rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+export const reorderHostInputRules=(ids:string[])=>apiFetch("/api/firewall/host-input-rules/reorder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});
 export const createAccessRule=(rule:any)=>apiFetch("/api/firewall/access-rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const updateAccessRule=(id:string,rule:any)=>apiFetch(`/api/firewall/access-rules/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removeAccessRule=(id:string)=>apiFetch(`/api/firewall/access-rules/${encodeURIComponent(id)}`,{method:"DELETE"});
@@ -145,3 +189,16 @@ export const setWgIpv6=(name:string,body:any)=>apiFetch(`/api/wireguard/interfac
 
 export const updateWgPeer=(name:string,id:string,body:any)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/peers/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 export const setWgPeerEnabled=(name:string,id:string,enabled:boolean)=>apiFetch(`/api/wireguard/interfaces/${encodeURIComponent(name)}/peers/${encodeURIComponent(id)}/enabled`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})});
+
+export const getNatStatus=():Promise<NatStatus>=>apiFetch("/api/nat/status");
+export const createNatRule=(rule:any)=>apiFetch("/api/nat/rules",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
+export const updateNatRule=(id:string,rule:any)=>apiFetch(`/api/nat/rules/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
+export const removeNatRule=(id:string)=>apiFetch(`/api/nat/rules/${encodeURIComponent(id)}`,{method:"DELETE"});
+
+export const getHostInterfacesStatus=():Promise<HostInterfaceManagementStatus>=>apiFetch("/api/interfaces/status");
+export const applyHostInterface=(body:any)=>apiFetch("/api/interfaces/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+export const confirmHostInterface=(token:string)=>apiFetch("/api/interfaces/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
+export const rollbackHostInterface=(token?:string)=>apiFetch("/api/interfaces/rollback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
+export const forgetHostInterface=(name:string)=>apiFetch(`/api/interfaces/${encodeURIComponent(name)}/managed`,{method:"DELETE"});
+
+export const deleteHostVlan=(name:string)=>apiFetch(`/api/interfaces/vlans/${encodeURIComponent(name)}`,{method:"DELETE"});

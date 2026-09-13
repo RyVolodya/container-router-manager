@@ -28,10 +28,12 @@ export interface DockerNetwork {
   };
   Containers?: Record<string, DockerNetworkContainer>;
   Labels?: Record<string, string>;
+  Options?: Record<string, string>;
 }
 
 export interface DockerContainerSummary {
   Id: string;
+  Labels?: Record<string, string>;
   Names: string[];
   Image: string;
   State: string;
@@ -54,6 +56,7 @@ export interface DockerContainerInspect {
   Id: string;
   Config?: {
     ExposedPorts?: Record<string, Record<string, never>>;
+    Labels?: Record<string, string>;
   };
   NetworkSettings?: {
     Ports?: Record<
@@ -76,6 +79,8 @@ export interface FirewallRule {
   family?: FirewallFamily;
   sourceNetworkId: string;
   destinationNetworkId: string;
+  sourceNetworkName?: string | null;
+  destinationNetworkName?: string | null;
   protocol: FirewallProtocol;
   destinationPort?: number | null;
   action: FirewallAction;
@@ -89,20 +94,26 @@ export type AccessSelectorType = "custom" | "docker-network" | "container" | "wi
 export interface AccessSelector {
   type: AccessSelectorType;
   refId?: string | null;
+  refName?: string | null;
   value?: string | null;
   label?: string | null;
+  composeProject?: string | null;
+  composeService?: string | null;
+  composeContainerNumber?: string | null;
 }
 
 export interface ContainerAccessRule {
   id: string;
   family: FirewallFamily;
   source: AccessSelector;
+  sourceNegate?: boolean;
   destination: AccessSelector;
   protocol: FirewallProtocol;
   destinationPort?: number | null;
   action: FirewallAction;
   enabled: boolean;
   description?: string;
+  managedByNatRuleId?: string | null;
 }
 
 export interface FirewallConfig {
@@ -130,7 +141,9 @@ export interface PublishedPortFirewallRule {
   publishedPort: number;
   hostIp: string;
   containerPort: number;
+  interfaceName?: string;
   sourceCidr: string;
+  sourceNegate?: boolean;
   destinationCidr?: string;
   action: FirewallAction;
   enabled: boolean;
@@ -155,6 +168,7 @@ export interface HostInputFirewallRule {
   protocol: FirewallProtocol;
   destinationPort?: number | null;
   sourceCidr: string;
+  sourceNegate?: boolean;
   action: FirewallAction;
   enabled: boolean;
   description?: string;

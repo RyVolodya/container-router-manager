@@ -15,6 +15,10 @@ services:
       PORT: "8081"
       DOCKER_SOCKET: /var/run/docker.sock
       DRM_DATA_DIR: /data
+      DRM_NETWORK_POLICY_INTERVAL_MS: "5000"
+      DRM_FIREWALL_DYNAMIC_INTERVAL_MS: "5000"
+      DRM_NAT_DYNAMIC_INTERVAL_MS: "5000"
+      DRM_INTERFACE_ROLLBACK_MS: "60000"
       HOST_PROC_SYS: /host/proc/sys
       COOKIE_SECURE: "false"
       SESSION_TTL_MS: "86400000"

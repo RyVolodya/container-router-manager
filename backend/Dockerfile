@@ -11,7 +11,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # iptables on modern Alpine normally uses the nftables compatibility backend.
-RUN apk add --no-cache iptables ip6tables conntrack-tools iproute2 wireguard-tools procps
+RUN apk add --no-cache iptables ip6tables conntrack-tools iproute2 wireguard-tools procps busybox-extras
 
 COPY package*.json ./
 RUN npm install --omit=dev

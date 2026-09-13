@@ -412,6 +412,69 @@ export async function createWireGuardInterface(input:any){
   await applyInterface(item); state.interfaces.push(item); await save(state); return{name:item.name,publicKey:item.publicKey};
 }
 
+export async function updateWireGuardInterface(iface:string,input:any){
+  validName(iface);
+  const state=await load();
+  const item=state.interfaces.find(i=>i.name===iface);
+  if(!item) throw new Error("Interface not found");
+
+  // Interface identity/private key are preserved. Renaming requires recreate.
+  if(input.name!==undefined && String(input.name)!==iface) throw new Error("WireGuard interface name cannot be changed; recreate the interface to rename it");
+
+  const current=normalizeInterface(item);
+  const ipv4Address=input.address!==undefined?String(input.address??"").trim():(addressesForFamily(current,4)[0]??"");
+  if(!ipv4Address) throw new Error("IPv4 gateway is required");
+  if(validateCidr(ipv4Address)!==4) throw new Error("IPv4 gateway must be an IPv4 CIDR");
+
+  const ipv6Enabled=input.ipv6Enabled!==undefined
+    ? Boolean(input.ipv6Enabled)
+    : Boolean(input.ipv6Address!==undefined ? input.ipv6Address : current.ipv6Address);
+  let ipv6Address="";
+  if(ipv6Enabled){
+    ipv6Address=String(input.ipv6Address??current.ipv6Address??autoIpv6GatewayFromIpv4(ipv4Address)).trim();
+    if(validateCidr(ipv6Address)!==6) throw new Error("IPv6 gateway must be an IPv6 CIDR");
+  }
+
+  const listenPort=input.listenPort!==undefined?Number(input.listenPort):item.listenPort;
+  if(!Number.isInteger(listenPort)||listenPort<1||listenPort>65535) throw new Error("Listen port must be 1..65535");
+  const mtu=input.mtu!==undefined?Number(input.mtu):item.mtu;
+  if(!Number.isInteger(mtu)||mtu<576||mtu>9000) throw new Error("MTU must be 576..9000");
+
+  item.address=ipv4Address;
+  item.ipv6Address=ipv6Enabled?ipv6Address:undefined;
+  item.addresses=uniq([ipv4Address,...(ipv6Enabled?[ipv6Address]:[])]);
+  item.listenPort=listenPort;
+  item.mtu=mtu;
+
+  if(ipv6Enabled){
+    item.peers.forEach((peer,index)=>{
+      const clientV6=peer.clientIpv6Address||autoIpv6PeerFromGateway(ipv6Address,index);
+      if(clientV6){
+        peer.clientIpv6Address=clientV6;
+        if(!peer.serverAllowedIps.includes(clientV6))peer.serverAllowedIps.push(clientV6);
+        if(peer.clientAllowedIps.includes("0.0.0.0/0")&&!peer.clientAllowedIps.includes("::/0"))peer.clientAllowedIps.push("::/0");
+      }
+    });
+  }else{
+    item.peers.forEach(peer=>{
+      peer.clientIpv6Address=undefined;
+      peer.serverAllowedIps=peer.serverAllowedIps.filter(x=>cidrFamily(x)!==6);
+      peer.clientAllowedIps=peer.clientAllowedIps.filter(x=>cidrFamily(x)!==6);
+    });
+    if(item.accessPolicy){
+      item.accessPolicy.internet6=false;
+      item.accessPolicy.nat66=false;
+      item.accessPolicy.dockerCidrs=item.accessPolicy.dockerCidrs.filter(x=>cidrFamily(x)!==6);
+      item.accessPolicy.lanCidrs=item.accessPolicy.lanCidrs.filter(x=>cidrFamily(x)!==6);
+    }
+  }
+
+  await applyInterface(item);
+  await save(state);
+  await applyAccessPolicies(state);
+  return getWireGuardStatus();
+}
+
 export async function configureWireGuardIpv6(iface:string,input:any){
   validName(iface);
   const state=await load();

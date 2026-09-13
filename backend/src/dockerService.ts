@@ -38,7 +38,11 @@ export async function listNetworks() {
       ipv4Address: endpoint.IPv4Address,
       ipv6Address: endpoint.IPv6Address
     })),
-    labels: network.Labels ?? {}
+    labels: network.Labels ?? {},
+    options: network.Options ?? {},
+    parent: network.Options?.parent ?? null,
+    vlanId: network.Labels?.["com.drm.vlan-id"] ? Number(network.Labels["com.drm.vlan-id"]) : null,
+    managedVlanInterface: network.Labels?.["com.drm.vlan-interface"] ?? null
   }));
 }
 
@@ -93,10 +97,17 @@ export async function getTopology() {
 
       ports.sort((a, b) => a.port - b.port || a.protocol.localeCompare(b.protocol));
 
+      const labels = inspected?.Config?.Labels ?? container.Labels ?? {};
+      const composeProject = labels["com.docker.compose.project"] ?? null;
+      const composeService = labels["com.docker.compose.service"] ?? null;
+      const composeContainerNumber = labels["com.docker.compose.container-number"] ?? null;
+
       return {
         id: container.Id,
         name: container.Names?.[0]?.replace(/^\//, "") ?? container.Id.slice(0, 12),
         image: container.Image,
+        labels,
+        compose: composeProject && composeService ? { project: composeProject, service: composeService, containerNumber: composeContainerNumber } : null,
         state: container.State,
         status: container.Status,
         ports,

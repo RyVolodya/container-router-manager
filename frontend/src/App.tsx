@@ -163,7 +163,7 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
       <aside className={sidebarCollapsed?"sidebar collapsed":"sidebar"}>
         <div className="brand">
           <div className="brand-mark"><img src="/drm-mark.svg" alt="DRM" /></div>
-          <div className="brand-text"><strong>Docker Router</strong><span>Manager</span></div>
+          <div className="brand-text"><strong>Container Router</strong><span>Manager</span></div>
           <button className="sidebar-collapse-btn" onClick={()=>setSidebarCollapsed(v=>!v)} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>
             {sidebarCollapsed?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}
           </button>
@@ -239,7 +239,7 @@ function LoginScreen({onAuthenticated}:{onAuthenticated:(user:AuthUser)=>void}){
   const [busy,setBusy]=useState(false);
   async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setError("");try{const result=await login(username,password);onAuthenticated(result.user);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
   return <div className="auth-page"><form className="auth-card" onSubmit={submit}>
-    <div className="auth-brand"><div className="brand-mark"><img src="/drm-mark.svg" alt="DRM" /></div><div><strong>Docker Router Manager</strong><span>Secure management access</span></div></div>
+    <div className="auth-brand"><div className="brand-mark"><img src="/drm-mark.svg" alt="DRM" /></div><div><strong>Container Router Manager</strong><span>Secure management access</span></div></div>
     <h1>Sign in</h1><p>Authenticate to manage Docker networking, firewall, routing and VPN.</p>
     {error&&<div className="auth-error">{error}</div>}
     <label><span>Username</span><input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} /></label>

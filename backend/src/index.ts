@@ -29,7 +29,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "64kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "docker-router-manager", version: "0.16.9" });
+  res.json({ status: "ok", service: "docker-router-manager", version: "0.17.2" });
 });
 
 

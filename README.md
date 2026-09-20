@@ -14,7 +14,7 @@ Manage WireGuard**
 ![IPv4%20%2B%20IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-dual--stack-2f80ff)
 ![WireGuard](https://img.shields.io/badge/WireGuard-supported-88171A?logo=wireguard&logoColor=white)
 
-**Current release: v0.10.10**
+**Current release: v0.16.9**
 
 [Quick Start](#-quick-start) · [Features](#-what-can-drm-do) ·
 [Screenshots](#-screenshots) · [Security](#-security-considerations) ·
@@ -710,10 +710,10 @@ for release notes and previous versions.
 
 ## 📄 License
 
-Docker Router Manager is open-source software distributed under the
-**GNU General Public License v3.0 (GPL-3.0)**.
+This project is licensed under the MIT License.
+See the [LICENSE](LICENSE) file for details.
 
-See [LICENSE](LICENSE) for the complete license text.
+Copyright © 2026 Volodymyr Rybak.
 
 ------------------------------------------------------------------------
 

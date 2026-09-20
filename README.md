@@ -1,5 +1,5 @@
 
-<img src="docs/images/drm-logo.png" alt="Docker Router Manager logo" width="120">
+<img src="docs/images/drm-logo.png" alt="Container Router Manager logo" width="120">
 
 # Container Router Manager
 
@@ -14,7 +14,7 @@ Manage WireGuard**
 ![IPv4%20%2B%20IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-dual--stack-2f80ff)
 ![WireGuard](https://img.shields.io/badge/WireGuard-supported-88171A?logo=wireguard&logoColor=white)
 
-**Current release: v0.16.9**
+**Current release: v0.17.1**
 
 [Quick Start](#-quick-start) · [Features](#-what-can-drm-do) ·
 [Screenshots](#-screenshots) · [Security](#-security-considerations) ·
@@ -23,7 +23,7 @@ Manage WireGuard**
 
 ------------------------------------------------------------------------
 
-## What is Docker Router Manager?
+## What is Container Router Manager?
 
 **Container Router Manager (DRM)** is an open-source web interface for
 managing the network layer around Docker.
@@ -74,35 +74,35 @@ Docker networks, LANs, VPN clients and external networks**.
 Get an immediate overview of Docker networks, containers, endpoints,
 published ports and traffic.
 
-<img src="docs/images/dashboard.png" alt="Docker Router Manager dashboard">
+<img src="docs/images/dashboard.png" alt="Container Router Manager dashboard">
 
 ### Interactive Network Topology
 
 See Docker networks, containers, published ports and external paths in
 one live diagram.
 
-<img src="docs/images/topology.png" alt="Docker Router Manager topology">
+<img src="docs/images/topology.png" alt="Container Router Manager topology">
 
 ### Docker-aware Firewall
 
 Control access to published Docker services and policies between Docker
 networks.
 
-<img src="docs/images/firewall.png" alt="Docker Router Manager firewall">
+<img src="docs/images/firewall.png" alt="Container Router Manager firewall">
 
 ### IPv4 / IPv6 Routing
 
 Inspect the Linux routing table, forwarding state and DRM-managed static
 routes.
 
-<img src="docs/images/routing.png" alt="Docker Router Manager routing">
+<img src="docs/images/routing.png" alt="Container Router Manager routing">
 
 ### WireGuard
 
 Create interfaces and peers, define access policies and generate client
 configurations or QR codes.
 
-<img src="docs/images/wireguard.png" alt="Docker Router Manager WireGuard">
+<img src="docs/images/wireguard.png" alt="Container Router Manager WireGuard">
 
 ------------------------------------------------------------------------
 
@@ -154,7 +154,7 @@ configurations or QR codes.
 
 ## 🔥 Firewall Engine
 
-Docker Router Manager manages traffic at the Docker host level and
+Container Router Manager manages traffic at the Docker host level and
 integrates with Docker's forwarding path.
 
 ### Published-port filtering
@@ -557,7 +557,7 @@ Public Internet
 Management LAN / VPN
       │
       ▼
-Docker Router Manager
+Container Router Manager
 ```
 
 Recommended practices:
@@ -682,7 +682,7 @@ sudo ip6tables -L -n -v
 
 ------------------------------------------------------------------------
 
-## ⭐ Support Docker Router Manager
+## ⭐ Support Container Router Manager
 
 If DRM is useful to you, **give the repository a star**. It helps other
 Docker, self-hosted and homelab users discover the project.
@@ -700,7 +700,7 @@ You can also help by:
 
 ## 📦 Release
 
-Current release: **Docker Router Manager v0.10.0**
+Current release: **Container Router Manager v0.17.1**
 
 See [GitHub
 Releases](https://github.com/RyVolodya/docker-router-manager/releases)
@@ -717,7 +717,7 @@ Copyright © 2026 Volodymyr Rybak.
 
 ------------------------------------------------------------------------
 
-### Docker Router Manager
+### Container Router Manager
 
 **Docker networking, routing, firewall and WireGuard management from one
 web interface.**

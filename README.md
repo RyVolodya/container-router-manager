@@ -1,7 +1,7 @@
 
 <img src="docs/images/drm-logo.png" alt="Docker Router Manager logo" width="120">
 
-# Docker Router Manager
+# Container Router Manager
 
 ### Turn your Docker host into a manageable router, firewall and WireGuard gateway.
 
@@ -25,7 +25,7 @@ Manage WireGuard**
 
 ## What is Docker Router Manager?
 
-**Docker Router Manager (DRM)** is an open-source web interface for
+**Container Router Manager (DRM)** is an open-source web interface for
 managing the network layer around Docker.
 
 Docker makes containers and published ports easy to create, but once a

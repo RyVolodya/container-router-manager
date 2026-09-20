@@ -13,7 +13,6 @@ Manage WireGuard**
 ![Linux](https://img.shields.io/badge/Linux-host-FCC624?logo=linux&logoColor=black)
 ![IPv4%20%2B%20IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-dual--stack-2f80ff)
 ![WireGuard](https://img.shields.io/badge/WireGuard-supported-88171A?logo=wireguard&logoColor=white)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 **Current release: v0.10.10**
 

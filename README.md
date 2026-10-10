@@ -700,7 +700,7 @@ You can also help by:
 
 ## 📦 Release
 
-Current release: **Container Router Manager v0.17.1**
+Current release: **Container Router Manager v0.17.2**
 
 See [GitHub
 Releases](https://github.com/RyVolodya/docker-router-manager/releases)

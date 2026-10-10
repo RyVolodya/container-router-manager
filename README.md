@@ -14,7 +14,7 @@ Manage WireGuard**
 ![IPv4%20%2B%20IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-dual--stack-2f80ff)
 ![WireGuard](https://img.shields.io/badge/WireGuard-supported-88171A?logo=wireguard&logoColor=white)
 
-**Current release: v0.17.1**
+**Current release: v0.17.2**
 
 [Quick Start](#-quick-start) · [Features](#-what-can-drm-do) ·
 [Screenshots](#-screenshots) · [Security](#-security-considerations) ·
@@ -710,7 +710,7 @@ for release notes and previous versions.
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the GPLv3 License.
 See the [LICENSE](LICENSE) file for details.
 
 Copyright © 2026 Volodymyr Rybak.

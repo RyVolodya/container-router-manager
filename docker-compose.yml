@@ -23,7 +23,7 @@ services:
       COOKIE_SECURE: "false"
       SESSION_TTL_MS: "86400000"
       SESSION_TOUCH_INTERVAL_MS: "300000"
-      GITHUB_REPOSITORY: "RyVolodya/docker-router-manager"
+      GITHUB_REPOSITORY: "RyVolodya/container-router-manager"
       GITHUB_UPDATE_CACHE_MS: "900000"
 
   frontend:

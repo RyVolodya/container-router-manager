@@ -193,7 +193,7 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
             <span className="theme-toggle-text">{theme==="dark"?"Light theme":"Dark theme"}</span>
           </button>
           <div className="sidebar-user"><strong>{auth.username}</strong><span>{auth.role}</span><button onClick={onLogout} title="Logout"><LogOut size={14}/></button></div>
-          <div className="version">DRM v0.16.1</div>
+          <div className="version">DRM v0.17.3</div>
         </div>
       </aside>
 
@@ -359,26 +359,14 @@ function Dashboard({ data, trafficRates }: { data: Topology | null; trafficRates
           <strong className="stat-value">{value}</strong><span className="stat-hint">{hint}</span>
         </article>)}
     </section>
-    <section className="two-col">
-      <div className="panel"><PanelTitle title="Network overview" subtitle="Live Docker Engine data"/>
-        <div className="network-list">{[...(data?.networks ?? [])].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).slice(0,6).map(n=><NetworkRow network={n} key={n.id}/>)}
-        {!data?.networks.length && <Empty text="No network data yet"/>}</div>
-      </div>
-      <div className="panel"><PanelTitle title="Containers & ports" subtitle="Primary address and published services"/>
-        <div className="container-list">{[...(data?.containers ?? [])].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).slice(0,7).map(c=>
-          <div className="container-row" key={c.id}>
-            <div className="container-icon"><Container size={17}/></div>
-            <div className="grow"><strong>{c.name}</strong><span>{portSummary(c)}</span></div>
-            <div className="right-meta"><span className={c.state==="running"?"pill green":"pill"}>{c.state}</span>
-            <code className="dual-ip-code">{networkEndpointAddress(c.networks[0]?.ipv4Address,c.networks[0]?.ipv6Address)}</code></div>
-          </div>)}
-        {!data?.containers.length && <Empty text="No container data yet"/>}</div>
-      </div>
+    <section className="panel network-overview-full"><PanelTitle title="Network overview" subtitle="Live Docker Engine data"/>
+      <div className="network-list">{[...(data?.networks ?? [])].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).slice(0,6).map(n=><NetworkRow network={n} key={n.id}/>)}
+      {!data?.networks.length && <Empty text="No network data yet"/>}</div>
     </section>
     <section className="panel live-traffic-panel">
       <PanelTitle title="Live container traffic" subtitle="Docker network I/O, refreshed every 2 seconds"/>
       <div className="traffic-table-head"><span>Container</span><span>RX / sec</span><span>TX / sec</span><span>Total RX</span><span>Total TX</span></div>
-      {[...(data?.containers ?? [])].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).map(c=>{ const t=trafficRates[c.id]; return <div className="traffic-table-row" key={c.id}><div className="name-cell"><div className="container-icon"><Activity size={15}/></div><div><strong>{c.name}</strong><span>{containerAddressSummary(c)}</span></div></div><strong className="traffic-rx">{formatRate(t?.rxRate ?? 0)}</strong><strong className="traffic-tx">{formatRate(t?.txRate ?? 0)}</strong><span>{formatBytes(t?.rxBytes ?? 0)}</span><span>{formatBytes(t?.txBytes ?? 0)}</span></div>; })}
+      {[...(data?.containers ?? [])].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id)).map(c=>{ const t=trafficRates[c.id]; return <div className="traffic-table-row" key={c.id}><div className="name-cell"><div className="container-icon"><Activity size={15}/></div><div><strong>{c.name}</strong><span className="traffic-container-address">{containerAddressSummary(c)}</span></div></div><strong className="traffic-rx">{formatRate(t?.rxRate ?? 0)}</strong><strong className="traffic-tx">{formatRate(t?.txRate ?? 0)}</strong><span>{formatBytes(t?.rxBytes ?? 0)}</span><span>{formatBytes(t?.txBytes ?? 0)}</span></div>; })}
       {!data?.containers.length && <Empty text="No container traffic data"/>}
     </section>
   </>;
@@ -760,7 +748,7 @@ function Ports({containers,firewall,canManage}:{containers:DockerContainer[];fir
       <div className="port-mapping-dialog">
         <div className="port-mapping-head"><div><strong>Edit Port Mapping</strong><span>{editing.container.name} · {editing.port.port}/{editing.port.protocol}</span></div><button className="notification-close" onClick={()=>setEditing(null)}><X size={17}/></button></div>
         <div className="port-mapping-grid">
-          <label><span>WAN interface</span><select value={form.wan} onChange={e=>setForm({...form,wan:e.target.value})}>{(natStatus?.hostInterfaces??[]).map(i=><option key={i.name} value={i.name}>{i.name} · {i.addresses.join(", ")||"no IPv4"}</option>)}</select></label>
+          <label><span>WAN interface</span><select value={form.wan} onChange={e=>setForm({...form,wan:e.target.value})}>{(natStatus?.hostInterfaces??[]).map(i=><option key={i.name} value={i.name}>{i.name} · {i.addresses.join(", ")||"no IP"}</option>)}</select></label>
           <label><span>External IP</span><select value={form.externalIp} onChange={e=>setForm({...form,externalIp:e.target.value})}><option value="0.0.0.0">Any IP on selected WAN</option>{(natStatus?.hostInterfaces.find(i=>i.name===form.wan)?.ips??[]).map(ip=><option key={ip}>{ip}</option>)}</select></label>
           <label><span>External port</span><input type="number" min="1" max="65535" value={form.externalPort} onChange={e=>setForm({...form,externalPort:e.target.value.replace(/\D/g,"")})}/></label>
           <label><span>Internal port</span><input type="number" min="1" max="65535" value={form.internalPort} onChange={e=>setForm({...form,internalPort:e.target.value.replace(/\D/g,"")})}/></label>
@@ -1257,7 +1245,7 @@ function FirewallEngine() {
             const ownerClass=rule.owner==="DRM"?"green":rule.owner==="Docker"?"blue":"warning";
             const targetClass=rule.target==="ACCEPT"?"green":rule.target==="DROP"?"danger":rule.target==="REJECT"?"warning":"";
             return <tr key={rule.id}>
-              <td><span className={`pill ${ownerClass}`}>{rule.owner}</span></td>
+              <td>IPv{rule.family}</td><td><span className={`pill ${ownerClass}`}>{rule.owner}</span></td>
               <td><span className={`pill ${rule.family===4?"blue":""}`}>{rule.family===4?"IPv4":"IPv6"}</span></td>
               <td><code>{rule.chain}</code></td><td>{rule.position}</td>
               <td>{rule.packets.toLocaleString()}</td><td>{formatBytes(rule.bytes)}</td>
@@ -1290,8 +1278,8 @@ function NatPage({canManage}:{canManage:boolean}){
   const [natOwnerFilter,setNatOwnerFilter]=useState<"All"|"DRM"|"Docker"|"System-External">("All");
   const [natChainFilter,setNatChainFilter]=useState("All");
   const [natSearch,setNatSearch]=useState("");
-  const [outForm,setOutForm]=useState({type:"masquerade" as "masquerade"|"snat",sourceType:"docker-network" as "docker-network"|"custom",sourceKey:"",sourceCidr:"10.0.0.0/24",outInterface:"",toSourceIp:"",policyRoute:true,description:""});
-  const [dnatForm,setDnatForm]=useState({inInterface:"",externalIp:"0.0.0.0",protocol:"tcp" as "tcp"|"udp",externalPort:"8080",sourceCidr:"0.0.0.0/0",destinationKind:"container" as "container"|"ip",containerId:"",networkName:"",destinationIp:"",internalPort:"80",createFirewallRule:true,description:""});
+  const [outForm,setOutForm]=useState({family:4 as 4|6,type:"masquerade" as "masquerade"|"snat",sourceType:"docker-network" as "docker-network"|"custom",sourceKey:"",sourceCidr:"10.0.0.0/24",outInterface:"",toSourceIp:"",policyRoute:true,description:""});
+  const [dnatForm,setDnatForm]=useState({family:4 as 4|6,inInterface:"",externalIp:"0.0.0.0",protocol:"tcp" as "tcp"|"udp",externalPort:"8080",sourceCidr:"0.0.0.0/0",destinationKind:"container" as "container"|"ip",containerId:"",networkName:"",destinationIp:"",internalPort:"80",createFirewallRule:true,description:""});
 
   async function load(){
     try{
@@ -1302,6 +1290,10 @@ function NatPage({canManage}:{canManage:boolean}){
   }
   useEffect(()=>{load();const timer=window.setInterval(load,5000);return()=>window.clearInterval(timer)},[]);
 
+  const sourceNetworks=(status?.networkRefs??[]).filter(n=>n.subnets.some(cidr=>outForm.family===6?cidr.includes(":"):!cidr.includes(":")));
+  const sourceNetworkOptions=sourceNetworks.map(n=>({...n,subnets:n.subnets.filter(cidr=>outForm.family===6?cidr.includes(":"):!cidr.includes(":"))}));
+  const dnatInterfaces=(status?.hostInterfaces??[]).filter(i=>dnatForm.family===6?(i.ipv6Ips??[]).length>0:(i.ips??[]).length>0);
+  const dnatContainers=(status?.containerRefs??[]).filter(c=>c.networks.some(n=>dnatForm.family===6?Boolean(n.ipv6Address):Boolean(n.ipv4Address)));
   const selectedOutInterface=status?.hostInterfaces.find(x=>x.name===outForm.outInterface);
   const selectedDnatInterface=status?.hostInterfaces.find(x=>x.name===dnatForm.inInterface);
   const selectedContainer=status?.containerRefs.find(x=>x.id===dnatForm.containerId);
@@ -1309,11 +1301,12 @@ function NatPage({canManage}:{canManage:boolean}){
   async function saveOutbound(){
     setBusy(true);setError("");
     try{
-      const network=status?.networkRefs.find(n=>n.id===outForm.sourceKey);
+      const network=sourceNetworkOptions.find(n=>n.id===outForm.sourceKey);
+      if(outForm.sourceType==="docker-network"&&!network)throw new Error(`Select a Docker network with IPv${outForm.family} subnet`);
       const source=outForm.sourceType==="custom"
         ? {type:"custom",value:outForm.sourceCidr,label:outForm.sourceCidr}
         : {type:"docker-network",refId:network?.id??outForm.sourceKey,refName:network?.name??null,label:network?.name??outForm.sourceKey};
-      const body={type:outForm.type,source,outInterface:outForm.outInterface,toSourceIp:outForm.type==="snat"?outForm.toSourceIp:null,policyRoute:outForm.policyRoute,description:outForm.description,enabled:true};
+      const body={family:outForm.family,type:outForm.type,source,outInterface:outForm.outInterface,toSourceIp:outForm.type==="snat"?outForm.toSourceIp:null,policyRoute:outForm.policyRoute,description:outForm.description,enabled:true};
       if(editingOut)await updateNatRule(editingOut,body);else await createNatRule(body);
       setEditingOut(null);setOutForm(f=>({...f,type:"masquerade",toSourceIp:"",description:""}));await load();
     }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false)}
@@ -1322,11 +1315,12 @@ function NatPage({canManage}:{canManage:boolean}){
   async function saveDnat(){
     setBusy(true);setError("");
     try{
-      const container=status?.containerRefs.find(c=>c.id===dnatForm.containerId);
+      const container=dnatContainers.find(c=>c.id===dnatForm.containerId);
+      if(dnatForm.destinationKind==="container"&&!container)throw new Error(`Select a Docker container with IPv${dnatForm.family} address`);
       const destination=dnatForm.destinationKind==="ip"
         ? {kind:"ip",ip:dnatForm.destinationIp}
         : {kind:"container",refId:container?.id??dnatForm.containerId,refName:container?.name??null,label:container?.name??dnatForm.containerId,networkName:dnatForm.networkName||null};
-      const body={type:"dnat",inInterface:dnatForm.inInterface,externalIp:dnatForm.externalIp||"0.0.0.0",protocol:dnatForm.protocol,externalPort:Number(dnatForm.externalPort),sourceCidr:dnatForm.sourceCidr,destination,internalPort:Number(dnatForm.internalPort),createFirewallRule:dnatForm.createFirewallRule,description:dnatForm.description,enabled:true};
+      const body={family:dnatForm.family,type:"dnat",inInterface:dnatForm.inInterface,externalIp:dnatForm.externalIp||(dnatForm.family===6?"::":"0.0.0.0"),protocol:dnatForm.protocol,externalPort:Number(dnatForm.externalPort),sourceCidr:dnatForm.sourceCidr,destination,internalPort:Number(dnatForm.internalPort),createFirewallRule:dnatForm.family===4&&dnatForm.createFirewallRule,description:dnatForm.description,enabled:true};
       if(editingDnat)await updateNatRule(editingDnat,body);else await createNatRule(body);
       setEditingDnat(null);setDnatForm(f=>({...f,externalPort:"8080",internalPort:"80",description:""}));await load();
     }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false)}
@@ -1334,11 +1328,11 @@ function NatPage({canManage}:{canManage:boolean}){
 
   function editOutbound(rule:NatOutboundRule){
     setEditingOut(rule.id);setEditingDnat(null);
-    setOutForm({type:rule.type,sourceType:rule.source.type==="docker-network"?"docker-network":"custom",sourceKey:rule.source.refId??"",sourceCidr:rule.source.value??"",outInterface:rule.outInterface,toSourceIp:rule.toSourceIp??"",policyRoute:rule.policyRoute!==false,description:rule.description??""});
+    setOutForm({family:rule.family??4,type:rule.type,sourceType:rule.source.type==="docker-network"?"docker-network":"custom",sourceKey:rule.source.refId??"",sourceCidr:rule.source.value??"",outInterface:rule.outInterface,toSourceIp:rule.toSourceIp??"",policyRoute:rule.policyRoute!==false,description:rule.description??""});
   }
   function editDnat(rule:NatDnatRule){
     setEditingDnat(rule.id);setEditingOut(null);
-    setDnatForm({inInterface:rule.inInterface,externalIp:rule.externalIp,protocol:rule.protocol,externalPort:String(rule.externalPort),sourceCidr:rule.sourceCidr,destinationKind:rule.destination.kind,containerId:rule.destination.kind==="container"?rule.destination.refId:"",networkName:rule.destination.kind==="container"?(rule.destination.networkName??""):"",destinationIp:rule.destination.kind==="ip"?rule.destination.ip:"",internalPort:String(rule.internalPort),createFirewallRule:rule.createFirewallRule,description:rule.description??""});
+    setDnatForm({family:rule.family??4,inInterface:rule.inInterface,externalIp:rule.externalIp,protocol:rule.protocol,externalPort:String(rule.externalPort),sourceCidr:rule.sourceCidr,destinationKind:rule.destination.kind,containerId:rule.destination.kind==="container"?rule.destination.refId:"",networkName:rule.destination.kind==="container"?(rule.destination.networkName??""):"",destinationIp:rule.destination.kind==="ip"?rule.destination.ip:"",internalPort:String(rule.internalPort),createFirewallRule:rule.createFirewallRule,description:rule.description??""});
   }
   async function toggle(rule:NatRule){try{await updateNatRule(rule.id,{enabled:!rule.enabled});await load()}catch(e){setError(e instanceof Error?e.message:String(e))}}
   async function remove(rule:NatRule){if(!window.confirm(`Delete NAT rule ${rule.description||rule.id}?`))return;try{await removeNatRule(rule.id);if(editingOut===rule.id)setEditingOut(null);if(editingDnat===rule.id)setEditingDnat(null);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}}
@@ -1358,7 +1352,7 @@ function NatPage({canManage}:{canManage:boolean}){
   return <div className="nat-stack">
     {error&&<div className="error-banner"><AlertTriangle size={18}/><div><strong>NAT error</strong><span>{error}</span></div></div>}
     <div className="panel nat-overview">
-      <PanelTitle title="NAT Engine" subtitle="Managed IPv4 MASQUERADE, SNAT and DNAT with dynamic Docker container resolution"/>
+      <PanelTitle title="NAT Engine" subtitle="DualStack IPv4/IPv6 MASQUERADE, SNAT and DNAT with dynamic Docker container resolution"/>
       <div className="nat-summary">
         <div><span>PREROUTING</span><strong className={status?.engine.preChainPresent?"good-text":"warn-text"}>{status?.engine.preChainPresent?"ACTIVE":"NOT INSTALLED"}</strong></div>
         <div><span>POSTROUTING</span><strong className={status?.engine.postChainPresent?"good-text":"warn-text"}>{status?.engine.postChainPresent?"ACTIVE":"NOT INSTALLED"}</strong></div>
@@ -1371,18 +1365,19 @@ function NatPage({canManage}:{canManage:boolean}){
     <div className="panel">
       <PanelTitle title="Outbound NAT" subtitle="Choose which Docker/private source networks leave through each WAN"/>
       {canManage&&<div className="nat-builder">
+        <label><span>IP family</span><select value={outForm.family} onChange={e=>setOutForm({...outForm,family:Number(e.target.value) as 4|6,sourceCidr:e.target.value==="6"?"fd00::/64":"10.0.0.0/24",sourceKey:"",toSourceIp:""})}><option value={4}>NAT44 (IPv4)</option><option value={6}>NAT66 (IPv6)</option></select></label>
         <label><span>Mode</span><select value={outForm.type} onChange={e=>setOutForm({...outForm,type:e.target.value as any})}><option value="masquerade">MASQUERADE</option><option value="snat">SNAT</option></select></label>
         <label><span>Source type</span><select value={outForm.sourceType} onChange={e=>setOutForm({...outForm,sourceType:e.target.value as any})}><option value="docker-network">Docker Network</option><option value="custom">Custom CIDR</option></select></label>
-        {outForm.sourceType==="docker-network"?<label><span>Source network</span><select value={outForm.sourceKey} onChange={e=>setOutForm({...outForm,sourceKey:e.target.value})}>{(status?.networkRefs??[]).map(n=><option key={n.id} value={n.id}>{n.name} · {n.subnets.join(", ")||"no subnet"}</option>)}</select></label>:<label><span>Source CIDR</span><input value={outForm.sourceCidr} onChange={e=>setOutForm({...outForm,sourceCidr:e.target.value})} placeholder="10.0.0.0/24"/></label>}
-        <label><span>WAN interface</span><select value={outForm.outInterface} onChange={e=>setOutForm({...outForm,outInterface:e.target.value,toSourceIp:""})}>{(status?.hostInterfaces??[]).map(i=><option key={i.name} value={i.name}>{i.name} · {i.addresses.join(", ")||"no IPv4"}</option>)}</select></label>
-        {outForm.type==="snat"&&<label><span>Source IP</span><select value={outForm.toSourceIp} onChange={e=>setOutForm({...outForm,toSourceIp:e.target.value})}><option value="">Select IP…</option>{(selectedOutInterface?.ips??[]).map(ip=><option key={ip}>{ip}</option>)}</select></label>}
+        {outForm.sourceType==="docker-network"?<label><span>Source network</span><select value={outForm.sourceKey} onChange={e=>setOutForm({...outForm,sourceKey:e.target.value})}>{sourceNetworkOptions.map(n=><option key={n.id} value={n.id}>{n.name} · {n.subnets.join(", ")}</option>)}</select></label>:<label><span>Source CIDR</span><input value={outForm.sourceCidr} onChange={e=>setOutForm({...outForm,sourceCidr:e.target.value})} placeholder={outForm.family===6?"fd00::/64":"10.0.0.0/24"}/></label>}
+        <label><span>WAN interface</span><select value={outForm.outInterface} onChange={e=>setOutForm({...outForm,outInterface:e.target.value,toSourceIp:""})}>{(status?.hostInterfaces??[]).map(i=><option key={i.name} value={i.name}>{i.name} · {(outForm.family===6?i.ipv6Addresses:i.addresses).join(", ")||"no IP"}</option>)}</select></label>
+        {outForm.type==="snat"&&<label><span>Source IP</span><select value={outForm.toSourceIp} onChange={e=>setOutForm({...outForm,toSourceIp:e.target.value})}><option value="">Select IP…</option>{(outForm.family===6?(selectedOutInterface?.ipv6Ips??[]):(selectedOutInterface?.ips??[])).map(ip=><option key={ip}>{ip}</option>)}</select></label>}
         <label className="nat-check"><input type="checkbox" checked={outForm.policyRoute} onChange={e=>setOutForm({...outForm,policyRoute:e.target.checked})}/><span>Route this source through selected WAN</span></label>
         <label className="nat-description"><span>Description</span><input value={outForm.description} onChange={e=>setOutForm({...outForm,description:e.target.value})} placeholder="Office containers via ISP-1"/></label>
-        <div className="nat-form-actions"><button className="btn primary" disabled={busy||!outForm.outInterface} onClick={saveOutbound}>{editingOut?"Save changes":"Add outbound rule"}</button>{editingOut&&<button className="btn secondary" onClick={()=>setEditingOut(null)}>Cancel</button>}</div>
+        <div className="nat-form-actions"><button className="btn primary" disabled={busy||!outForm.outInterface||(outForm.sourceType==="docker-network"&&!sourceNetworkOptions.some(n=>n.id===outForm.sourceKey))} onClick={saveOutbound}>{editingOut?"Save changes":"Add outbound rule"}</button>{editingOut&&<button className="btn secondary" onClick={()=>setEditingOut(null)}>Cancel</button>}</div>
       </div>}
       <div className="nat-rule-list">{outbound.length===0?<div className="empty-state">No outbound NAT rules</div>:outbound.map(rule=>{
         const rt=status?.runtime[rule.id];return <div className="nat-rule-row" key={rule.id}>
-          <span className={`pill ${rule.enabled?"green":"warning"}`}>{rule.type.toUpperCase()}</span>
+          <span className={`pill ${rule.enabled?"green":"warning"}`}>{`NAT${rule.family===6?66:44} ${rule.type.toUpperCase()}`}</span>
           <div><strong>{rule.source.label||rule.source.refName||rule.source.value||"Source"} → {rule.outInterface}</strong><small>{rule.type==="snat"?`SNAT ${rule.toSourceIp}`:"MASQUERADE"} · {rt?.source.join(", ")||"waiting"}{rule.policyRoute?` · policy table ${rule.routeTable}`:""}</small></div>
           <span className={`pill ${rt?.resolved?"green":"warning"}`}>{rt?.resolved?"LIVE":"WAITING"}</span>
           {canManage&&<div className="nat-actions"><button className="btn secondary" onClick={()=>editOutbound(rule)}>Edit</button><button className="btn secondary" onClick={()=>toggle(rule)}>{rule.enabled?"Disable":"Enable"}</button><button className="icon-danger" onClick={()=>remove(rule)}><Trash2 size={15}/></button></div>}
@@ -1392,31 +1387,32 @@ function NatPage({canManage}:{canManage:boolean}){
     <div className="panel">
       <PanelTitle title="Port Forwarding / Container Port Mapping" subtitle="DNAT external WAN ports to an IP or a Docker container; external and internal ports are independently editable"/>
       {canManage&&<div className="nat-builder dnat-builder">
-        <label><span>WAN interface</span><select value={dnatForm.inInterface} onChange={e=>setDnatForm({...dnatForm,inInterface:e.target.value,externalIp:"0.0.0.0"})}>{(status?.hostInterfaces??[]).map(i=><option key={i.name} value={i.name}>{i.name} · {i.addresses.join(", ")||"no IPv4"}</option>)}</select></label>
-        <label><span>External IP</span><select value={dnatForm.externalIp} onChange={e=>setDnatForm({...dnatForm,externalIp:e.target.value})}><option value="0.0.0.0">Any IP on interface</option>{(selectedDnatInterface?.ips??[]).map(ip=><option key={ip}>{ip}</option>)}</select></label>
+        <label><span>IP family</span><select value={dnatForm.family} onChange={e=>setDnatForm({...dnatForm,family:Number(e.target.value) as 4|6,externalIp:e.target.value==="6"?"::":"0.0.0.0",sourceCidr:e.target.value==="6"?"::/0":"0.0.0.0/0",destinationIp:"",inInterface:"",containerId:"",networkName:""})}><option value={4}>NAT44 (IPv4)</option><option value={6}>NAT66 (IPv6)</option></select></label>
+        <label><span>WAN interface</span><select value={dnatForm.inInterface} onChange={e=>setDnatForm({...dnatForm,inInterface:e.target.value,externalIp:dnatForm.family===6?"::":"0.0.0.0"})}>{dnatInterfaces.map(i=><option key={i.name} value={i.name}>{i.name} · {(dnatForm.family===6?i.ipv6Addresses:i.addresses).join(", ")}</option>)}</select></label>
+        <label><span>External IP</span><select value={dnatForm.externalIp} onChange={e=>setDnatForm({...dnatForm,externalIp:e.target.value})}><option value={dnatForm.family===6?"::":"0.0.0.0"}>Any IP on interface</option>{(dnatForm.family===6?(selectedDnatInterface?.ipv6Ips??[]):(selectedDnatInterface?.ips??[])).map(ip=><option key={ip}>{ip}</option>)}</select></label>
         <label><span>Protocol</span><select value={dnatForm.protocol} onChange={e=>setDnatForm({...dnatForm,protocol:e.target.value as any})}><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
         <label><span>External port</span><input type="number" min="1" max="65535" value={dnatForm.externalPort} onChange={e=>setDnatForm({...dnatForm,externalPort:e.target.value})}/></label>
-        <label><span>Allowed source</span><input value={dnatForm.sourceCidr} onChange={e=>setDnatForm({...dnatForm,sourceCidr:e.target.value})} placeholder="0.0.0.0/0"/></label>
+        <label><span>Allowed source</span><input value={dnatForm.sourceCidr} onChange={e=>setDnatForm({...dnatForm,sourceCidr:e.target.value})} placeholder={dnatForm.family===6?"::/0":"0.0.0.0/0"}/></label>
         <label><span>Destination</span><select value={dnatForm.destinationKind} onChange={e=>setDnatForm({...dnatForm,destinationKind:e.target.value as any})}><option value="container">Docker Container</option><option value="ip">IP address</option></select></label>
         {dnatForm.destinationKind==="container"?<>
-          <label><span>Container</span><select value={dnatForm.containerId} onChange={e=>setDnatForm({...dnatForm,containerId:e.target.value,networkName:""})}>{(status?.containerRefs??[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-          <label><span>Container network</span><select value={dnatForm.networkName} onChange={e=>setDnatForm({...dnatForm,networkName:e.target.value})}><option value="">Follow current IPv4</option>{(selectedContainer?.networks??[]).filter(n=>n.ipv4Address).map(n=><option key={n.networkName} value={n.networkName}>{n.networkName} · {n.ipv4Address}</option>)}</select></label>
-        </>:<label><span>Destination IP</span><input value={dnatForm.destinationIp} onChange={e=>setDnatForm({...dnatForm,destinationIp:e.target.value})} placeholder="192.168.1.100"/></label>}
+          <label><span>Container</span><select value={dnatForm.containerId} onChange={e=>setDnatForm({...dnatForm,containerId:e.target.value,networkName:""})}>{dnatContainers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label><span>Container network</span><select value={dnatForm.networkName} onChange={e=>setDnatForm({...dnatForm,networkName:e.target.value})}><option value="">Follow current container IP</option>{(selectedContainer?.networks??[]).filter(n=>dnatForm.family===6?n.ipv6Address:n.ipv4Address).map(n=><option key={n.networkName} value={n.networkName}>{n.networkName} · {dnatForm.family===6?n.ipv6Address:n.ipv4Address}</option>)}</select></label>
+        </>:<label><span>Destination IP</span><input value={dnatForm.destinationIp} onChange={e=>setDnatForm({...dnatForm,destinationIp:e.target.value})} placeholder={dnatForm.family===6?"fd00::100":"192.168.1.100"}/></label>}
         <label><span>Internal port</span><input type="number" min="1" max="65535" value={dnatForm.internalPort} onChange={e=>setDnatForm({...dnatForm,internalPort:e.target.value})}/></label>
-        <label className="nat-check"><input type="checkbox" checked={dnatForm.createFirewallRule} onChange={e=>setDnatForm({...dnatForm,createFirewallRule:e.target.checked})}/><span>Create/update matching Firewall ACCEPT rule</span></label>
+        <label className="nat-check"><input type="checkbox" disabled={dnatForm.family===6} checked={dnatForm.family===4&&dnatForm.createFirewallRule} onChange={e=>setDnatForm({...dnatForm,createFirewallRule:e.target.checked})}/><span>Create/update matching Firewall ACCEPT rule</span></label>
         <label className="nat-description"><span>Description</span><input value={dnatForm.description} onChange={e=>setDnatForm({...dnatForm,description:e.target.value})} placeholder="Public syslog web UI"/></label>
-        <div className="nat-form-actions"><button className="btn primary" disabled={busy||!dnatForm.inInterface} onClick={saveDnat}>{editingDnat?"Save port mapping":"Add port forward"}</button>{editingDnat&&<button className="btn secondary" onClick={()=>setEditingDnat(null)}>Cancel</button>}</div>
+        <div className="nat-form-actions"><button className="btn primary" disabled={busy||!dnatForm.inInterface||(dnatForm.destinationKind==="container"&&!dnatContainers.some(c=>c.id===dnatForm.containerId))} onClick={saveDnat}>{editingDnat?"Save port mapping":"Add port forward"}</button>{editingDnat&&<button className="btn secondary" onClick={()=>setEditingDnat(null)}>Cancel</button>}</div>
       </div>}
       <div className="nat-rule-list">{dnat.length===0?<div className="empty-state">No DNAT / Container Port Mapping rules</div>:dnat.map(rule=>{
         const rt=status?.runtime[rule.id];const dest=rule.destination.kind==="container"?(rule.destination.label||rule.destination.refName||"container"):rule.destination.ip;return <div className="nat-rule-row dnat-row" key={rule.id}>
-          <span className={`pill ${rule.enabled?"blue":"warning"}`}>DNAT</span>
+          <span className={`pill ${rule.enabled?"blue":"warning"}`}>{`NAT${rule.family===6?66:44} DNAT`}</span>
           <div><strong>{rule.inInterface} · {rule.externalIp==="0.0.0.0"?"*":rule.externalIp}:{rule.externalPort}/{rule.protocol.toUpperCase()} → {dest}:{rule.internalPort}</strong><small>{rule.sourceCidr} · {rt?.destination[0]??"destination unavailable"}{rule.createFirewallRule?" · Firewall linked":""}</small></div>
           <span className={`pill ${rt?.resolved?"green":"warning"}`}>{rt?.resolved?"LIVE":"WAITING"}</span>
           {canManage&&<div className="nat-actions"><button className="btn secondary" onClick={()=>editDnat(rule)}>Edit ports</button><button className="btn secondary" onClick={()=>toggle(rule)}>{rule.enabled?"Disable":"Enable"}</button><button className="icon-danger" onClick={()=>remove(rule)}><Trash2 size={15}/></button></div>}
         </div>})}</div>
     </div>
     <div className="panel all-nat-panel">
-      <PanelTitle title="All NAT Rules" subtitle="Live read-only view of the host IPv4 NAT table, including DRM, Docker and external/system rules"/>
+      <PanelTitle title="All NAT Rules" subtitle="Live read-only view of the host IPv4 and IPv6 NAT tables, including DRM, Docker and external/system rules"/>
       <div className="all-nat-toolbar">
         <label><span>Owner</span><select value={natOwnerFilter} onChange={e=>setNatOwnerFilter(e.target.value as any)}><option>All</option><option>DRM</option><option>Docker</option><option>System-External</option></select></label>
         <label><span>Chain</span><select value={natChainFilter} onChange={e=>setNatChainFilter(e.target.value)}><option>All</option>{natChains.map(chain=><option key={chain}>{chain}</option>)}</select></label>
@@ -1425,8 +1421,8 @@ function NatPage({canManage}:{canManage:boolean}){
       </div>
       <div className="all-nat-table-wrap">
         <table className="all-nat-table">
-          <thead><tr><th>Owner</th><th>Chain</th><th>#</th><th>Packets</th><th>Bytes</th><th>Protocol</th><th>Source</th><th>Destination</th><th>In</th><th>Out</th><th>Ports / Translation</th><th>Target</th></tr></thead>
-          <tbody>{visibleNatRules.length===0?<tr><td colSpan={12}><div className="empty-state">No NAT rules match the current filters</div></td></tr>:visibleNatRules.map(rule=>{
+          <thead><tr><th>Family</th><th>Owner</th><th>Chain</th><th>#</th><th>Packets</th><th>Bytes</th><th>Protocol</th><th>Source</th><th>Destination</th><th>In</th><th>Out</th><th>Ports / Translation</th><th>Target</th></tr></thead>
+          <tbody>{visibleNatRules.length===0?<tr><td colSpan={13}><div className="empty-state">No NAT rules match the current filters</div></td></tr>:visibleNatRules.map(rule=>{
             const ports=[
               rule.sourcePort?`sport ${rule.sourcePort}`:"",
               rule.destinationPort?`dport ${rule.destinationPort}`:"",
@@ -1435,7 +1431,7 @@ function NatPage({canManage}:{canManage:boolean}){
             ].filter(Boolean).join(" · ")||"—";
             const ownerClass=rule.owner==="DRM"?"green":rule.owner==="Docker"?"blue":"warning";
             return <tr key={rule.id}>
-              <td><span className={`pill ${ownerClass}`}>{rule.owner}</span></td>
+              <td>IPv{rule.family}</td><td><span className={`pill ${ownerClass}`}>{rule.owner}</span></td>
               <td><code>{rule.chain}</code></td><td>{rule.position}</td><td>{rule.packets.toLocaleString()}</td><td>{fmtBytes(rule.bytes)}</td>
               <td>{rule.protocol.toUpperCase()}</td><td><code>{rule.source}</code></td><td><code>{rule.destination}</code></td>
               <td>{rule.inInterface??"—"}</td><td>{rule.outInterface??"—"}</td><td><code>{ports}</code></td><td><strong>{rule.target||"—"}</strong></td>
@@ -1452,13 +1448,16 @@ function NatPage({canManage}:{canManage:boolean}){
 
 function HostInterfacesPage({canManage}:{canManage:boolean}){
   const [status,setStatus]=useState<HostInterfaceManagementStatus|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const [showConfigure,setShowConfigure]=useState(false);
   const [kind,setKind]=useState<"physical"|"vlan">("physical"),[name,setName]=useState(""),[parent,setParent]=useState(""),[vlanId,setVlanId]=useState("100");
   const [mode,setMode]=useState<"dhcp"|"static">("static"),[address,setAddress]=useState(""),[gateway,setGateway]=useState(""),[metric,setMetric]=useState("100"),[addDefaultRoute,setAddDefaultRoute]=useState(true),[now,setNow]=useState(Date.now());
+  const [family,setFamily]=useState<4|6>(4),[ipv6Mode,setIpv6Mode]=useState<"static"|"auto">("auto"),[ipv6Address,setIpv6Address]=useState(""),[ipv6Gateway,setIpv6Gateway]=useState(""),[slaac,setSlaac]=useState(true),[dhcpv6,setDhcpv6]=useState(false),[ipv6Default,setIpv6Default]=useState(true);
+  const [dns4,setDns4]=useState(""),[dns6,setDns6]=useState("");
   async function load(){try{const next=await getHostInterfacesStatus();setStatus(next);setError("");const p=next.interfaces.filter(i=>i.kind==="physical");setName(v=>v||p[0]?.name||"");setParent(v=>v||p[0]?.name||"")}catch(e){setError(e instanceof Error?e.message:String(e))}}
   useEffect(()=>{load();const t=window.setInterval(load,3000),c=window.setInterval(()=>setNow(Date.now()),1000);return()=>{window.clearInterval(t);window.clearInterval(c)}},[]);
   const physical=status?.interfaces.filter(i=>i.kind==="physical")??[],pending=status?.pending??null,secondsLeft=pending?Math.max(0,Math.ceil((new Date(pending.expiresAt).getTime()-now)/1000)):0;
-  function edit(i:any){setKind(i.kind==="vlan"?"vlan":"physical");if(i.kind==="vlan"){setParent(i.parent||"");setVlanId(String(i.vlanId||100))}else setName(i.name);const c=i.managedConfig;if(c){setMode(c.mode);setAddress(c.address||"");setGateway(c.gateway||"");setMetric(c.metric==null?"100":String(c.metric));setAddDefaultRoute(c.addDefaultRoute!==false)}else{setMode("static");setAddress(i.ipv4[0]||"");setGateway(i.defaultRoutes[0]?.gateway||"");setMetric(String(i.defaultRoutes[0]?.metric??100));setAddDefaultRoute(Boolean(i.defaultRoutes.length))}}
-  async function apply(){setBusy(true);setError("");try{const body=kind==="vlan"?{name:`${parent}.${vlanId}`,vlan:{parent,vlanId:Number(vlanId)},mode,address:mode==="static"?address:null,gateway:mode==="static"?gateway:null,metric:metric?Number(metric):null,addDefaultRoute:mode==="dhcp"?addDefaultRoute:Boolean(gateway)}:{name,mode,address:mode==="static"?address:null,gateway:mode==="static"?gateway:null,metric:metric?Number(metric):null,addDefaultRoute:mode==="dhcp"?addDefaultRoute:Boolean(gateway)};await applyHostInterface(body);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
+  function edit(i:any){setShowConfigure(true);setKind(i.kind==="vlan"?"vlan":"physical");if(i.kind==="vlan"){setParent(i.parent||"");setVlanId(String(i.vlanId||100))}else setName(i.name);const c=i.managedConfig;setDns4((c?.dns4??i.dns4??[]).join(", "));setDns6((c?.ipv6?.dns??i.dns6??[]).join(", "));setIpv6Mode(c?.ipv6?.mode??"auto");setIpv6Address(c?.ipv6?.address??i.ipv6?.find((x:string)=>!x.startsWith("fe80:"))??"");setIpv6Gateway(c?.ipv6?.gateway??"");setSlaac(c?.ipv6?.slaac??true);setDhcpv6(c?.ipv6?.dhcpv6??false);setIpv6Default(c?.ipv6?.addDefaultRoute??true);if(c){setMode(c.mode);setAddress(c.address||"");setGateway(c.gateway||"");setMetric(c.metric==null?"100":String(c.metric));setAddDefaultRoute(c.addDefaultRoute!==false)}else{setMode("static");setAddress(i.ipv4[0]||"");setGateway(i.defaultRoutes[0]?.gateway||"");setMetric(String(i.defaultRoutes[0]?.metric??100));setAddDefaultRoute(Boolean(i.defaultRoutes.length))}}
+  async function apply(){setBusy(true);setError("");try{const body=kind==="vlan"?{name:`${parent}.${vlanId}`,vlan:{parent,vlanId:Number(vlanId)},mode,address:mode==="static"?address:null,gateway:mode==="static"?gateway:null,metric:metric?Number(metric):null,addDefaultRoute:mode==="dhcp"?addDefaultRoute:Boolean(gateway),dns4:mode==="static"?dns4:""}:{name,mode,address:mode==="static"?address:null,gateway:mode==="static"?gateway:null,metric:metric?Number(metric):null,addDefaultRoute:mode==="dhcp"?addDefaultRoute:Boolean(gateway),dns4:mode==="static"?dns4:""};await applyHostInterface(family===6?{...body,family:6,ipv6:{mode:ipv6Mode,address:ipv6Mode==="static"?ipv6Address:null,gateway:ipv6Mode==="static"&&!ipv6Default?ipv6Gateway:null,metric:metric?Number(metric):null,slaac:ipv6Mode==="auto"&&slaac,dhcpv6:ipv6Mode==="auto"&&dhcpv6,addDefaultRoute:ipv6Default,dns:ipv6Mode==="static"?dns6:""}}:body);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
   async function confirm(){if(!pending)return;setBusy(true);try{await confirmHostInterface(pending.token);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
   async function rollback(){if(!pending)return;setBusy(true);try{await rollbackHostInterface(pending.token);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
   async function removeVlanInterface(i:any){
@@ -1471,20 +1470,27 @@ function HostInterfacesPage({canManage}:{canManage:boolean}){
   }
   return <div className="interface-stack">
     {error&&<div className="error-banner"><AlertTriangle size={18}/><div><strong>Interface management error</strong><span>{error}</span></div></div>}
-    {pending&&<div className="interface-pending-banner"><AlertTriangle size={20}/><div><strong>Confirm network access — {secondsLeft}s remaining</strong><span>{pending.interfaceName} is using the new configuration. If not confirmed, DRM restores the previous IPv4 addresses/default route automatically.</span></div>{canManage&&<div className="interface-pending-actions"><button className="btn primary" disabled={busy} onClick={confirm}>Confirm configuration</button><button className="btn secondary" disabled={busy} onClick={rollback}>Rollback now</button></div>}</div>}
-    <div className="panel"><PanelTitle title="Host Interface Management" subtitle="Physical and 802.1Q VLAN IPv4 interfaces with DHCP/static configuration and safe rollback"/><div className="interface-summary-grid"><div><span>Physical</span><strong>{status?.interfaces.filter(i=>i.kind==="physical").length??0}</strong></div><div><span>VLAN</span><strong>{status?.interfaces.filter(i=>i.kind==="vlan").length??0}</strong></div><div><span>DRM managed</span><strong>{status?.managed.length??0}</strong></div><div><span>Rollback timer</span><strong>{status?`${Math.round(status.rollbackMs/1000)}s`:"—"}</strong></div></div></div>
-    {canManage&&<div className="panel"><PanelTitle title="Configure interface" subtitle="Apply is temporary first; confirm after verifying DRM is still reachable."/><div className="interface-builder">
-      <label><span>Interface type</span><select value={kind} onChange={e=>setKind(e.target.value as any)}><option value="physical">Physical interface</option><option value="vlan">802.1Q VLAN</option></select></label>
-      {kind==="physical"?<label><span>Interface</span><select value={name} onChange={e=>{setName(e.target.value);const i=status?.interfaces.find(x=>x.name===e.target.value);if(i)edit(i)}}>{physical.map(i=><option key={i.name} value={i.name}>{i.name} · {i.state} · {i.ipv4.join(", ")||"no IPv4"}</option>)}</select></label>:<><label><span>Parent interface</span><select value={parent} onChange={e=>setParent(e.target.value)}>{physical.map(i=><option key={i.name} value={i.name}>{i.name} · {i.state}</option>)}</select></label><label><span>VLAN ID</span><input type="number" min="1" max="4094" value={vlanId} onChange={e=>setVlanId(e.target.value.replace(/\D/g,""))}/></label></>}
-      <label><span>IPv4 mode</span><div className="family-switch"><button type="button" className={mode==="static"?"family-option active":"family-option"} onClick={()=>setMode("static")}>Static</button><button type="button" className={mode==="dhcp"?"family-option active":"family-option"} onClick={()=>setMode("dhcp")}>DHCP</button></div></label>
-      {mode==="static"&&<><label><span>IPv4 address / prefix</span><input value={address} onChange={e=>setAddress(e.target.value)} placeholder="192.168.10.2/24"/></label><label><span>Default gateway</span><input value={gateway} onChange={e=>setGateway(e.target.value)} placeholder="192.168.10.1"/></label></>}{mode==="dhcp"&&<label className="interface-default-route-check"><span>DHCP routing</span><div className="wg-ipv6-check"><input type="checkbox" checked={addDefaultRoute} onChange={e=>setAddDefaultRoute(e.target.checked)}/><strong>Add default route</strong></div></label>}
-      <label><span>Route metric</span><input value={metric} onChange={e=>setMetric(e.target.value.replace(/\D/g,""))} placeholder="100"/></label><div className="interface-apply-actions"><button className="btn primary" disabled={busy||Boolean(pending)||(kind==="physical"?!name:!parent||!vlanId)||(mode==="static"&&!address)} onClick={apply}>Apply & start rollback timer</button></div>
-    </div><div className="session-policy-note"><Shield size={15}/><div><strong>Safe Apply</strong><span>The new configuration becomes persistent only after Confirm. If access is lost, the previous address/default route return automatically.</span></div></div></div>}
+    {pending&&<div className="interface-pending-banner"><AlertTriangle size={20}/><div><strong>Confirm network access — {secondsLeft}s remaining</strong><span>{pending.interfaceName} is using the new configuration. If not confirmed, DRM restores the previous addresses/default route automatically.</span></div>{canManage&&<div className="interface-pending-actions"><button className="btn primary" disabled={busy} onClick={confirm}>Confirm configuration</button><button className="btn secondary" disabled={busy} onClick={rollback}>Rollback now</button></div>}</div>}
+    <div className="panel"><PanelTitle title="Host Interface Management" subtitle="Physical and 802.1Q VLAN IPv4/IPv6 interfaces with safe rollback"/><div className="interface-summary-grid"><div><span>Physical</span><strong>{status?.interfaces.filter(i=>i.kind==="physical").length??0}</strong></div><div><span>VLAN</span><strong>{status?.interfaces.filter(i=>i.kind==="vlan").length??0}</strong></div><div><span>DRM managed</span><strong>{status?.managed.length??0}</strong></div><div><span>Rollback timer</span><strong>{status?`${Math.round(status.rollbackMs/1000)}s`:"—"}</strong></div></div></div>
     <div className="panel"><PanelTitle title="Host interfaces" subtitle="Docker bridge/veth and WireGuard interfaces are excluded from direct address management"/><div className="host-interface-list">{(status?.interfaces??[]).map(i=><div className="host-interface-row" key={i.name}>
       <div className="host-interface-main"><div className="host-interface-name"><strong>{i.name}</strong><span className={`pill ${i.up?"green":"warning"}`}>{i.state}</span>{i.kind==="vlan"&&<span className="pill blue">VLAN {i.vlanId}</span>}{i.managedConfig&&<span className="pill green">DRM MANAGED</span>}</div><small>{i.mac||"no MAC"} · MTU {i.mtu??"—"}{i.parent?` · parent ${i.parent}`:""}</small></div>
-      <div><span className="interface-cell-label">IPv4</span><code>{i.ipv4.join(", ")||"—"}</code></div><div><span className="interface-cell-label">Default route</span><code>{i.defaultRoutes.map((r:any)=>`${r.gateway||"direct"}${r.metric!=null?` metric ${r.metric}`:""}`).join(", ")||"—"}</code></div><div><span className="interface-cell-label">Mode</span><strong>{i.managedConfig?.mode?.toUpperCase()||"SYSTEM"}</strong></div>
+      <div><span className="interface-cell-label">IPv4</span><code>{i.ipv4.join(", ")||"—"}</code><span className="interface-cell-label">IPv6</span><code>{i.ipv6?.join(", ")||"—"}</code></div><div><span className="interface-cell-label">Default route</span><code>{i.defaultRoutes.map((r:any)=>`${r.gateway||"direct"}${r.metric!=null?` metric ${r.metric}`:""}`).join(", ")||"—"}</code></div><div><span className="interface-cell-label">Mode</span><strong>{i.ipv4ActualMode||"SYSTEM"} IPv4</strong><div><strong>{i.managedConfig?.ipv6?.mode==="static"?"STATIC IPv6":i.managedConfig?.ipv6?.mode==="auto"?(i.managedConfig.ipv6.slaac&&i.managedConfig.ipv6.dhcpv6?"SLAAC + DHCPv6 IPv6":i.managedConfig.ipv6.dhcpv6?"DHCPv6 IPv6":"SLAAC IPv6"):(i.ipv6?.some((a:string)=>!a.startsWith("fe80:"))?"SYSTEM IPv6":"IPv6 —")}</strong></div></div>
+      <div><span className="interface-cell-label">DNS</span><code>{i.dns4?.join(", ")||"—"}</code><span className="interface-cell-label">IPv6 DNS</span><code>{i.dns6?.join(", ")||"—"}</code></div>
       {canManage&&<div className="host-interface-actions"><button className="btn secondary" disabled={Boolean(pending)||busy} onClick={()=>edit(i)}>Configure</button>{i.managedConfig&&<button className="btn secondary" disabled={Boolean(pending)||busy} onClick={async()=>{if(window.confirm(`Stop DRM from restoring ${i.name} after restart? Current runtime addressing is left unchanged.`)){await forgetHostInterface(i.name);await load()}}}>Forget</button>}{i.kind==="vlan"&&i.managedVlan&&<button className="icon-danger" disabled={Boolean(pending)||busy} onClick={()=>removeVlanInterface(i)} title="Delete VLAN interface"><Trash2 size={15}/></button>}</div>}
     </div>)}{!status?.interfaces.length&&<Empty text="No manageable physical/VLAN interfaces detected"/>}</div></div>
+    {canManage&&showConfigure&&<div className="panel"><div className="wg-panel-action-head"><PanelTitle title="Configure interface" subtitle="Apply is temporary first; confirm after verifying DRM is still reachable."/><button className="btn secondary" onClick={()=>setShowConfigure(false)}>Close</button></div><div className="interface-builder">
+      <label><span>Interface type</span><select value={kind} onChange={e=>setKind(e.target.value as any)}><option value="physical">Physical interface</option><option value="vlan">802.1Q VLAN</option></select></label>
+      {kind==="physical"?<label><span>Interface</span><select value={name} onChange={e=>{setName(e.target.value);const i=status?.interfaces.find(x=>x.name===e.target.value);if(i)edit(i)}}>{physical.map(i=><option key={i.name} value={i.name}>{i.name} · {i.state} · {i.ipv4.join(", ")||"no IPv4"}</option>)}</select></label>:<><label><span>Parent interface</span><select value={parent} onChange={e=>setParent(e.target.value)}>{physical.map(i=><option key={i.name} value={i.name}>{i.name} · {i.state}</option>)}</select></label><label><span>VLAN ID</span><input type="number" min="1" max="4094" value={vlanId} onChange={e=>setVlanId(e.target.value.replace(/\D/g,""))}/></label></>}
+      <label><span>IP family</span><div className="family-switch"><button type="button" className={family===4?"family-option active":"family-option"} onClick={()=>setFamily(4)}>IPv4</button><button type="button" className={family===6?"family-option active":"family-option"} onClick={()=>setFamily(6)}>IPv6</button></div></label>
+      {family===6?<>
+        <label><span>IPv6 mode</span><div className="family-switch"><button type="button" className={ipv6Mode==="static"?"family-option active":"family-option"} onClick={()=>setIpv6Mode("static")}>Static</button><button type="button" className={ipv6Mode==="auto"?"family-option active":"family-option"} onClick={()=>setIpv6Mode("auto")}>Automatic</button></div></label>
+        {ipv6Mode==="static"?<><label><span>IPv6 address / prefix</span><input value={ipv6Address} onChange={e=>setIpv6Address(e.target.value)} placeholder="fd00:1::2/64"/></label><label><span>Default gateway</span><input value={ipv6Default?"":ipv6Gateway} disabled={ipv6Default} onChange={e=>setIpv6Gateway(e.target.value)} placeholder={ipv6Default?"Gateway learned from RA":"fe80::1"}/></label><label><span>IPv6 DNS Servers</span><input value={dns6} onChange={e=>setDns6(e.target.value)} placeholder="2606:4700:4700::1111, 2001:4860:4860::8888"/></label></>:<><label className="interface-default-route-check"><span>IPv6 address</span><div className="wg-ipv6-check"><input type="checkbox" checked={slaac} onChange={e=>setSlaac(e.target.checked)}/><strong>SLAAC</strong></div></label><label className="interface-default-route-check"><span>IPv6 address</span><div className="wg-ipv6-check"><input type="checkbox" checked={dhcpv6} onChange={e=>setDhcpv6(e.target.checked)}/><strong>DHCPv6</strong></div></label></>}
+        {<label className="interface-default-route-check"><span>IPv6 routing</span><div className="wg-ipv6-check"><input type="checkbox" checked={ipv6Default} onChange={e=>setIpv6Default(e.target.checked)}/><strong>Add default route (via RA)</strong></div></label>}
+      </>:<>
+      <label><span>IPv4 mode</span><div className="family-switch"><button type="button" className={mode==="static"?"family-option active":"family-option"} onClick={()=>setMode("static")}>Static</button><button type="button" className={mode==="dhcp"?"family-option active":"family-option"} onClick={()=>setMode("dhcp")}>DHCP</button></div></label>
+      {mode==="static"&&<><label><span>IPv4 address / prefix</span><input value={address} onChange={e=>setAddress(e.target.value)} placeholder="192.168.10.2/24"/></label><label><span>Default gateway</span><input value={gateway} onChange={e=>setGateway(e.target.value)} placeholder="192.168.10.1"/></label><label><span>IPv4 DNS Servers</span><input value={dns4} onChange={e=>setDns4(e.target.value)} placeholder="1.1.1.1, 8.8.8.8"/></label></>}{mode==="dhcp"&&<label className="interface-default-route-check"><span>DHCP routing</span><div className="wg-ipv6-check"><input type="checkbox" checked={addDefaultRoute} onChange={e=>setAddDefaultRoute(e.target.checked)}/><strong>Add default route</strong></div></label>}
+      </>}<label><span>Route metric</span><input value={metric} onChange={e=>setMetric(e.target.value.replace(/\D/g,""))} placeholder="100"/></label><div className="interface-apply-actions"><button className="btn primary" disabled={busy||Boolean(pending)||(kind==="physical"?!name:!parent||!vlanId)||(family===4&&mode==="static"&&!address)||(family===6&&ipv6Mode==="static"&&!ipv6Address)||(family===6&&ipv6Mode==="auto"&&!slaac&&!dhcpv6)} onClick={apply}>Apply & start rollback timer</button></div>
+    </div><div className="session-policy-note"><Shield size={15}/><div><strong>Safe Apply</strong><span>The new configuration becomes persistent only after Confirm. If access is lost, the previous address/default route return automatically.</span></div></div></div>}
   </div>
 }
 

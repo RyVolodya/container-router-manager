@@ -14,6 +14,10 @@ const configPath = `${dataDir}/nat.json`;
 const preChain = "DRM-NAT-PREROUTING";
 const postChain = "DRM-NAT-POSTROUTING";
 
+type NatFamily = 4 | 6;
+const familyOf = (rule: {family?:NatFamily}):NatFamily => rule.family === 6 ? 6 : 4;
+const anyIp = (family:NatFamily) => family === 6 ? "::" : "0.0.0.0";
+const anyCidr = (family:NatFamily) => family === 6 ? "::/0" : "0.0.0.0/0";
 type NatProtocol = "tcp" | "udp";
 type NatSourceType = "custom" | "docker-network" | "container" | "wireguard";
 
@@ -43,6 +47,7 @@ type NatIpDestination = { kind: "ip"; ip: string };
 
 type BaseRule = {
   id: string;
+  family?: NatFamily;
   enabled: boolean;
   description: string;
   createdAt: string;
@@ -87,8 +92,8 @@ let refreshing = false;
 let lastRefreshAt: string | null = null;
 let lastError: string | null = null;
 
-async function iptablesNat(args: string[]) {
-  return execFileAsync("iptables", ["-w", "5", "-t", "nat", ...args], { maxBuffer: 1024 * 1024 });
+async function iptablesNat(args: string[], family:NatFamily = 4) {
+  return execFileAsync(family === 6 ? "ip6tables" : "iptables", ["-w", "5", "-t", "nat", ...args], { maxBuffer: 1024 * 1024 });
 }
 async function ip(args:string[]){
   return execFileAsync("ip", args, {maxBuffer:1024*1024});
@@ -97,6 +102,7 @@ async function ip(args:string[]){
 type NatRuleOwner = "DRM" | "Docker" | "System-External";
 type HostNatRule = {
   id:string;
+  family:NatFamily;
   chain:string;
   position:number;
   packets:number;
@@ -139,36 +145,19 @@ function natOwner(chain:string,tokens:string[]):NatRuleOwner{
 function cleanIface(value:string|null){return value&&value!=="*" ? value : null;}
 
 export async function listAllNatRules():Promise<HostNatRule[]>{
-  const {stdout}=await execFileAsync("iptables-save",["-t","nat","-c"],{maxBuffer:4*1024*1024});
-  const positions=new Map<string,number>();
   const rules:HostNatRule[]=[];
-  for(const rawLine of stdout.split(/\r?\n/)){
-    const line=rawLine.trim();
-    if(!line.startsWith("["))continue;
-    const counterMatch=line.match(/^\[(\d+):(\d+)\]\s+(.+)$/);
-    if(!counterMatch)continue;
-    const packets=Number(counterMatch[1]),bytes=Number(counterMatch[2]),spec=counterMatch[3];
-    const tokens=shellTokens(spec);
-    if(tokens[0]!=="-A"||!tokens[1])continue;
-    const chain=tokens[1];
-    const position=(positions.get(chain)??0)+1;
-    positions.set(chain,position);
-    const protocol=tokenValue(tokens,"-p","--protocol")??"all";
-    const source=tokenValue(tokens,"-s","--source")??"0.0.0.0/0";
-    const destination=tokenValue(tokens,"-d","--destination")??"0.0.0.0/0";
-    const target=tokenValue(tokens,"-j","--jump")??"";
-    const sourcePort=tokenValue(tokens,"--sport","--source-port","--sports");
-    const destinationPort=tokenValue(tokens,"--dport","--destination-port","--dports");
-    const toDestination=tokenValue(tokens,"--to-destination");
-    const toSource=tokenValue(tokens,"--to-source");
-    rules.push({
-      id:`${chain}:${position}`,
-      chain,position,packets,bytes,protocol,source,destination,
-      inInterface:cleanIface(tokenValue(tokens,"-i","--in-interface")),
-      outInterface:cleanIface(tokenValue(tokens,"-o","--out-interface")),
-      target,sourcePort,destinationPort,toDestination,toSource,
-      owner:natOwner(chain,tokens),raw:spec
-    });
+  for(const family of [4,6] as NatFamily[]){
+    const {stdout}=await execFileAsync(family===6?"ip6tables-save":"iptables-save",["-t","nat","-c"],{maxBuffer:4*1024*1024});
+    const positions=new Map<string,number>();
+    for(const rawLine of stdout.split(/\r?\n/)){
+      const match=rawLine.trim().match(/^\[(\d+):(\d+)\]\s+(.+)$/);
+      if(!match)continue;
+      const tokens=shellTokens(match[3]);
+      if(tokens[0]!=="-A"||!tokens[1])continue;
+      const chain=tokens[1],position=(positions.get(chain)??0)+1;
+      positions.set(chain,position);
+      rules.push({id:`${family}:${chain}:${position}`,family,chain,position,packets:Number(match[1]),bytes:Number(match[2]),protocol:tokenValue(tokens,"-p","--protocol")??"all",source:tokenValue(tokens,"-s","--source")??anyCidr(family),destination:tokenValue(tokens,"-d","--destination")??anyCidr(family),inInterface:cleanIface(tokenValue(tokens,"-i","--in-interface")),outInterface:cleanIface(tokenValue(tokens,"-o","--out-interface")),target:tokenValue(tokens,"-j","--jump")??"",sourcePort:tokenValue(tokens,"--sport","--source-port","--sports"),destinationPort:tokenValue(tokens,"--dport","--destination-port","--dports"),toDestination:tokenValue(tokens,"--to-destination"),toSource:tokenValue(tokens,"--to-source"),owner:natOwner(chain,tokens),raw:match[3]});
+    }
   }
   return rules;
 }
@@ -207,7 +196,9 @@ function validIpv4Cidr(value: string, label: string) {
   return raw;
 }
 
-function normalizeSource(input: any): NatSourceSelector {
+function validAddress(value:string,label:string,family:NatFamily){if(isIP(value)!==family)throw new Error(`${label} must be IPv${family} address`);return value;}
+function validCidr(value:string,label:string,family:NatFamily){const [ip,prefix,...extra]=value.split("/");const n=Number(prefix);if(extra.length||isIP(ip)!==family||!Number.isInteger(n)||n<0||n>(family===6?128:32))throw new Error(`${label} must be an IPv${family} CIDR`);return value;}
+function normalizeSource(input: any, family:NatFamily): NatSourceSelector {
   const type = String(input?.type ?? "custom") as NatSourceType;
   if (!(["custom", "docker-network", "container", "wireguard"] as string[]).includes(type)) throw new Error("Unsupported NAT source type");
   const selector: NatSourceSelector = {
@@ -220,8 +211,8 @@ function normalizeSource(input: any): NatSourceSelector {
     composeService: input?.composeService ? String(input.composeService).trim() : null,
     composeContainerNumber: input?.composeContainerNumber ? String(input.composeContainerNumber).trim() : null
   };
-  if (selector.type === "custom") validIpv4Cidr(selector.value ?? "", "Source");
-  if (selector.type === "wireguard") validIpv4Cidr(selector.value ?? "", "WireGuard source");
+  if (selector.type === "custom") validCidr(selector.value ?? "", "Source",family);
+  if (selector.type === "wireguard") validCidr(selector.value ?? "", "WireGuard source",family);
   if (["docker-network", "container"].includes(selector.type) && !selector.refId && !selector.refName) throw new Error("Selected NAT source no longer exists");
   return selector;
 }
@@ -250,9 +241,9 @@ async function enrichSource(selector: NatSourceSelector): Promise<NatSourceSelec
   return selector;
 }
 
-async function normalizeDestination(input: any): Promise<NatContainerDestination | NatIpDestination> {
+async function normalizeDestination(input: any,family:NatFamily): Promise<NatContainerDestination | NatIpDestination> {
   const kind = String(input?.kind ?? "container");
-  if (kind === "ip") return { kind: "ip", ip: validIpv4(String(input?.ip ?? "").trim(), "Destination IP") };
+  if (kind === "ip") return { kind: "ip", ip: validAddress(String(input?.ip ?? "").trim(), "Destination IP",family) };
   if (kind !== "container") throw new Error("Unsupported DNAT destination type");
   const topology = await getTopology();
   const c = topology.containers.find((x: any) => x.id === input?.refId || x.name === input?.refName || x.name === input?.label);
@@ -270,14 +261,16 @@ async function normalizeDestination(input: any): Promise<NatContainerDestination
 }
 
 async function hostInterfaces() {
-  const { stdout } = await execFileAsync("ip", ["-j", "-4", "address", "show"], { maxBuffer: 1024 * 1024 });
+  const { stdout } = await execFileAsync("ip", ["-j", "address", "show"], { maxBuffer: 1024 * 1024 });
   const interfaces = (JSON.parse(stdout) as any[])
     .filter(x => x.ifname && x.ifname !== "lo")
     .map(x => ({
       name: String(x.ifname),
       state: String(x.operstate ?? "UNKNOWN"),
       addresses: (x.addr_info ?? []).filter((a: any) => a.family === "inet").map((a: any) => `${a.local}/${a.prefixlen}`),
-      ips: (x.addr_info ?? []).filter((a: any) => a.family === "inet").map((a: any) => String(a.local))
+      ips: (x.addr_info ?? []).filter((a: any) => a.family === "inet").map((a: any) => String(a.local)),
+      ipv6Addresses:(x.addr_info ?? []).filter((a:any)=>a.family==="inet6").map((a:any)=>`${a.local}/${a.prefixlen}`),
+      ipv6Ips:(x.addr_info ?? []).filter((a:any)=>a.family==="inet6").map((a:any)=>String(a.local))
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   let defaultWanInterface: string | null = null;
@@ -287,7 +280,9 @@ async function hostInterfaces() {
     defaultRoutes=JSON.parse(route.stdout) as any[];
     defaultWanInterface = defaultRoutes[0]?.dev ?? null;
   } catch {}
-  return { interfaces, defaultWanInterface, defaultRoutes };
+  let defaultRoutes6:any[]=[];
+  try{const r=await execFileAsync("ip",["-j","-6","route","show","default"]);defaultRoutes6=JSON.parse(r.stdout)}catch{}
+  return { interfaces, defaultWanInterface, defaultRoutes,defaultRoutes6 };
 }
 
 function composeMatches(selector: { composeProject?: string | null; composeService?: string | null; composeContainerNumber?: string | null }, c: any) {
@@ -297,28 +292,28 @@ function composeMatches(selector: { composeProject?: string | null; composeServi
     String(c.compose?.containerNumber ?? "1") === String(selector.composeContainerNumber ?? "1"));
 }
 
-async function resolveSource(selector: NatSourceSelector, networks: any[], topology: any): Promise<string[]> {
+async function resolveSource(selector: NatSourceSelector, networks: any[], topology: any, family:NatFamily): Promise<string[]> {
   if (selector.type === "custom" || selector.type === "wireguard") return selector.value ? [selector.value] : [];
   if (selector.type === "docker-network") {
     const n = networks.find((x: any) => x.id === selector.refId || (selector.refName && x.name === selector.refName));
-    return n ? (n.subnets ?? []).map((x: any) => x.subnet).filter((x: any) => typeof x === "string" && x.includes(".")) : [];
+    return n ? (n.subnets ?? []).map((x: any) => x.subnet).filter((x: any) => typeof x === "string" && isIP(String(x).split("/")[0])===family) : [];
   }
   const c = topology.containers.find((x: any) => x.id === selector.refId || composeMatches(selector, x) || (selector.refName && x.name === selector.refName));
   if (!c) return [];
-  return [...new Set((c.networks ?? []).map((n: any) => n.ipv4Address).filter(Boolean).map((ip: string) => `${ip}/32`))] as string[];
+  return [...new Set((c.networks ?? []).map((n: any) => (family===6?n.ipv6Address:n.ipv4Address)).filter(Boolean).map((ip: string) => `${ip}/${family===6?128:32}`))] as string[];
 }
 
-async function resolveDestination(destination: NatContainerDestination | NatIpDestination, topology: any): Promise<string[]> {
+async function resolveDestination(destination: NatContainerDestination | NatIpDestination, topology: any, family:NatFamily): Promise<string[]> {
   if (destination.kind === "ip") return [destination.ip];
   const c = topology.containers.find((x: any) => x.id === destination.refId || composeMatches(destination, x) || (destination.refName && x.name === destination.refName));
   if (!c) return [];
   const networks = destination.networkName ? (c.networks ?? []).filter((n: any) => n.networkName === destination.networkName) : (c.networks ?? []);
-  return [...new Set(networks.map((n: any) => n.ipv4Address).filter(Boolean))] as string[];
+  return [...new Set(networks.map((n: any) => (family===6?n.ipv6Address:n.ipv4Address)).filter(Boolean))] as string[];
 }
 
 async function resolveRule(rule: NatRule, networks: any[], topology: any): Promise<ResolvedRule> {
   if (rule.type === "dnat") {
-    const destination = await resolveDestination(rule.destination, topology);
+    const destination = await resolveDestination(rule.destination, topology,familyOf(rule));
     return {
       resolved: destination.length > 0,
       message: destination.length ? "Resolved from current Docker/host state" : "Destination is currently unavailable",
@@ -326,7 +321,7 @@ async function resolveRule(rule: NatRule, networks: any[], topology: any): Promi
       destination
     };
   }
-  const source = await resolveSource(rule.source, networks, topology);
+  const source = await resolveSource(rule.source, networks, topology,familyOf(rule));
   return {
     resolved: source.length > 0,
     message: source.length ? "Resolved from current Docker/host state" : "Source is currently unavailable",
@@ -335,14 +330,14 @@ async function resolveRule(rule: NatRule, networks: any[], topology: any): Promi
   };
 }
 
-async function chainExists(name: string) {
-  try { await iptablesNat(["-n", "-L", name]); return true; } catch { return false; }
+async function chainExists(name: string,family:NatFamily=4) {
+  try { await iptablesNat(["-n", "-L", name],family); return true; } catch { return false; }
 }
 
-async function ensureChain(name: string, parent: "PREROUTING" | "POSTROUTING") {
-  if (!(await chainExists(name))) await iptablesNat(["-N", name]);
-  try { await iptablesNat(["-C", parent, "-j", name]); }
-  catch { await iptablesNat(["-I", parent, "1", "-j", name]); }
+async function ensureChain(name: string, parent: "PREROUTING" | "POSTROUTING",family:NatFamily=4) {
+  if (!(await chainExists(name,family))) await iptablesNat(["-N", name],family);
+  try { await iptablesNat(["-C", parent, "-j", name],family); }
+  catch { await iptablesNat(["-I", parent, "1", "-j", name],family); }
 }
 
 
@@ -351,93 +346,96 @@ function defaultRouteForInterface(defaultRoutes:any[],name:string){
 }
 
 async function cleanupPolicyRoute(rule:NatOutboundRule){
+  const family=familyOf(rule);
   const priority=Number(rule.routeTable);
   if(!Number.isInteger(priority)||priority<1)return;
   // routeTable remains the DRM-owned policy-rule priority/id. Never flush a VRF table.
   try{
-    const {stdout}=await ip(["-j","-4","rule","show"]);
+    const {stdout}=await ip(["-j",family===6?"-6":"-4","rule","show"]);
     const rules=JSON.parse(stdout) as any[];
     for(const r of rules.filter((x:any)=>Number(x.priority)===priority)){
-      try{await ip(["-4","rule","del","priority",String(priority)])}catch{}
+      try{await ip([family===6?"-6":"-4","rule","del","priority",String(priority)])}catch{}
     }
   }catch{}
   const vrf=await findVrfByInterface(rule.outInterface);
-  if(!vrf){try{await ip(["-4","route","flush","table",String(rule.routeTable)])}catch{}}
+  if(!vrf){try{await ip([family===6?"-6":"-4","route","flush","table",String(rule.routeTable)])}catch{}}
 }
 
 async function installPolicyRoute(rule:NatOutboundRule,sources:string[],defaultRoutes:any[]){
   await cleanupPolicyRoute(rule);
   if(!rule.enabled||!rule.policyRoute||sources.length===0)return;
+  const family=familyOf(rule);
   const vrf=await findVrfByInterface(rule.outInterface);
   const table=String(vrf?.table??rule.routeTable);
   let route:any=null;
   if(vrf){
     try{
-      const {stdout}=await execFileAsync("ip",["-j","-4","route","show","table",table,"default"],{maxBuffer:1024*1024});
+      const {stdout}=await execFileAsync("ip",["-j",family===6?"-6":"-4","route","show","table",table,"default"],{maxBuffer:1024*1024});
       const rows=JSON.parse(stdout) as any[];
       route=rows.find((r:any)=>r.dev===rule.outInterface)??rows[0]??null;
     }catch{}
   } else route=defaultRouteForInterface(defaultRoutes,rule.outInterface);
-  if(!route)throw new Error(`No IPv4 default route is available through ${rule.outInterface}${vrf?` in VRF ${vrf.name} table ${vrf.table}`:""}`);
+  if(!route)throw new Error(`No IPv${family} default route is available through ${rule.outInterface}${vrf?` in VRF ${vrf.name} table ${vrf.table}`:""}`);
   if(!vrf){
-    const routeArgs=["-4","route","replace","table",table,"default"];
+    const routeArgs=[family===6?"-6":"-4","route","replace","table",table,"default"];
     if(route.gateway)routeArgs.push("via",String(route.gateway));
     routeArgs.push("dev",rule.outInterface);
     if(route.gateway)routeArgs.push("onlink");
     await ip(routeArgs);
   }
-  for(const source of sources)await ip(["-4","rule","add","priority",String(rule.routeTable),"from",source,"lookup",table]);
+  for(const source of sources)await ip([family===6?"-6":"-4","rule","add","priority",String(rule.routeTable),"from",source,"lookup",table]);
 }
 
 async function render(config: NatConfig) {
-  await ensureChain(preChain, "PREROUTING");
-  await ensureChain(postChain, "POSTROUTING");
-  await iptablesNat(["-F", preChain]);
-  await iptablesNat(["-F", postChain]);
+  for(const family of [4,6] as NatFamily[]){
+    await ensureChain(preChain,"PREROUTING",family);await ensureChain(postChain,"POSTROUTING",family);
+    await iptablesNat(["-F",preChain],family);await iptablesNat(["-F",postChain],family);
+  }
   const [networks, topology, hosts] = await Promise.all([listNetworks(), getTopology(), hostInterfaces()]);
   for(const rule of config.rules.filter((r):r is NatOutboundRule=>r.type!=="dnat"))await cleanupPolicyRoute(rule);
 
   for (const rule of config.rules.filter(r => r.enabled)) {
+    const family=familyOf(rule);
     const resolved = await resolveRule(rule, networks, topology);
     if (!resolved.resolved) continue;
     if (rule.type === "dnat") {
       for (const targetIp of resolved.destination) {
         const args = ["-A", preChain];
         if (rule.inInterface && rule.inInterface !== "*") args.push("-i", rule.inInterface);
-        if (rule.externalIp && rule.externalIp !== "0.0.0.0") args.push("-d", rule.externalIp);
-        if (rule.sourceCidr !== "0.0.0.0/0") args.push("-s", rule.sourceCidr);
-        args.push("-p", rule.protocol, "--dport", String(rule.externalPort), "-m", "comment", "--comment", `DRM:nat:${rule.id}`, "-j", "DNAT", "--to-destination", `${targetIp}:${rule.internalPort}`);
-        await iptablesNat(args);
+        if (rule.externalIp && rule.externalIp !== anyIp(family)) args.push("-d", rule.externalIp);
+        if (rule.sourceCidr !== anyCidr(family)) args.push("-s", rule.sourceCidr);
+        args.push("-p", rule.protocol, "--dport", String(rule.externalPort), "-m", "comment", "--comment", `DRM:nat:${rule.id}`, "-j", "DNAT", "--to-destination", family===6?`[${targetIp}]:${rule.internalPort}`:`${targetIp}:${rule.internalPort}`);
+        await iptablesNat(args,family);
         break; // one deterministic destination per DNAT rule
       }
       continue;
     }
-    await installPolicyRoute(rule,resolved.source,hosts.defaultRoutes);
+    await installPolicyRoute(rule,resolved.source,family===6?hosts.defaultRoutes6:hosts.defaultRoutes);
     for (const sourceCidr of resolved.source) {
       const args = ["-A", postChain, "-s", sourceCidr, "-o", rule.outInterface, "-m", "comment", "--comment", `DRM:nat:${rule.id}`];
       if (rule.type === "masquerade") args.push("-j", "MASQUERADE");
       else args.push("-j", "SNAT", "--to-source", rule.toSourceIp!);
-      await iptablesNat(args);
+      await iptablesNat(args,family);
     }
   }
 }
 
-async function validateInterface(name: string, ip?: string | null) {
+async function validateInterface(name: string, ip?: string | null,family:NatFamily=4) {
   const refs = await hostInterfaces();
   const iface = refs.interfaces.find(x => x.name === name);
   if (!iface) throw new Error(`Host interface ${name} does not exist`);
-  if (ip && ip !== "0.0.0.0" && !iface.ips.includes(ip)) throw new Error(`${ip} is not configured on ${name}`);
+  if (ip && ip !== anyIp(family) && !(family===6?iface.ipv6Ips:iface.ips).includes(ip)) throw new Error(`${ip} is not configured on ${name}`);
   return iface;
 }
 
 async function validateDnatConflict(rule: NatDnatRule, ignoreId?: string) {
   const config = await readConfig();
-  const conflict = config.rules.find(r => r.id !== ignoreId && r.enabled && r.type === "dnat" && r.protocol === rule.protocol && r.externalPort === rule.externalPort && r.inInterface === rule.inInterface && (r.externalIp === rule.externalIp || r.externalIp === "0.0.0.0" || rule.externalIp === "0.0.0.0"));
+  const conflict = config.rules.find(r => r.id !== ignoreId && r.enabled && r.type === "dnat" && familyOf(r)===familyOf(rule) && r.protocol === rule.protocol && r.externalPort === rule.externalPort && r.inInterface === rule.inInterface && (r.externalIp === rule.externalIp || r.externalIp === anyIp(familyOf(rule)) || rule.externalIp === anyIp(familyOf(rule))));
   if (conflict) throw new Error(`DNAT conflict with existing rule ${conflict.description || conflict.id}`);
 
   const topology = await getTopology();
   const dockerConflict = topology.containers.flatMap((c: any) => (c.ports ?? []).flatMap((p: any) => (p.published ?? []).map((b: any) => ({ c, p, b })))).find((x: any) =>
-    x.p.protocol === rule.protocol && Number(x.b.hostPort) === rule.externalPort && (x.b.hostIp === "0.0.0.0" || rule.externalIp === "0.0.0.0" || x.b.hostIp === rule.externalIp)
+    x.p.protocol === rule.protocol && (isIP(x.b.hostIp)===familyOf(rule)||x.b.hostIp===anyIp(familyOf(rule))) && Number(x.b.hostPort) === rule.externalPort && (x.b.hostIp === anyIp(familyOf(rule)) || rule.externalIp === anyIp(familyOf(rule)) || x.b.hostIp === rule.externalIp)
   );
   if (dockerConflict) throw new Error(`External ${rule.protocol.toUpperCase()} port ${rule.externalPort} is already published by Docker container ${dockerConflict.c.name}`);
 
@@ -453,7 +451,7 @@ async function validateDnatConflict(rule: NatDnatRule, ignoreId?: string) {
       const listenIp=(match[1]??match[2]??"").replace(/^\*$/,rule.externalIp);
       const listenPort=Number(match[3]);
       if(listenPort!==rule.externalPort)continue;
-      if(listenIp==="0.0.0.0"||listenIp==="*"||rule.externalIp==="0.0.0.0"||listenIp===rule.externalIp){
+      if(listenIp===anyIp(familyOf(rule))||listenIp==="*"||rule.externalIp===anyIp(familyOf(rule))||listenIp===rule.externalIp){
         throw new Error(`External ${rule.protocol.toUpperCase()} port ${rule.externalPort} is already used by a host service on ${listenIp||"*"}`);
       }
     }
@@ -472,7 +470,10 @@ function routeTableFromId(id:string){
 async function normalizeRule(input: any, current?: NatRule): Promise<NatRule> {
   const now = new Date().toISOString();
   const type = String(input?.type ?? current?.type ?? "masquerade");
+  const family:NatFamily=Number(input?.family??current?.family??4)===6?6:4;
+  if(input?.family!==undefined && ![4,6].includes(Number(input.family)))throw new Error("NAT family must be 4 or 6");
   const base = {
+    family,
     id: current?.id ?? randomUUID(),
     enabled: input?.enabled === undefined ? (current?.enabled ?? true) : Boolean(input.enabled),
     description: input?.description === undefined ? (current?.description ?? "") : String(input.description).trim(),
@@ -481,11 +482,11 @@ async function normalizeRule(input: any, current?: NatRule): Promise<NatRule> {
   };
 
   if (type === "masquerade" || type === "snat") {
-    const source = await enrichSource(normalizeSource(input?.source ?? (current && current.type !== "dnat" ? current.source : null)));
+    const source = await enrichSource(normalizeSource(input?.source ?? (current && current.type !== "dnat" ? current.source : null),family));
     const outInterface = String(input?.outInterface ?? (current && current.type !== "dnat" ? current.outInterface : "")).trim();
     if (!outInterface) throw new Error("WAN/output interface is required");
-    const toSourceIp = type === "snat" ? validIpv4(String(input?.toSourceIp ?? (current && current.type === "snat" ? current.toSourceIp ?? "" : "")).trim(), "SNAT source IP") : null;
-    await validateInterface(outInterface, toSourceIp);
+    const toSourceIp = type === "snat" ? validAddress(String(input?.toSourceIp ?? (current && current.type === "snat" ? current.toSourceIp ?? "" : "")).trim(), "SNAT source IP",family) : null;
+    await validateInterface(outInterface, toSourceIp,family);
     const previous=current&&current.type!=="dnat"?current:null;
     const routeTable=Number(input?.routeTable??previous?.routeTable??routeTableFromId(base.id));
     const policyRoute=input?.policyRoute===undefined?(previous?.policyRoute??true):Boolean(input.policyRoute);
@@ -496,12 +497,12 @@ async function normalizeRule(input: any, current?: NatRule): Promise<NatRule> {
   const existing = current?.type === "dnat" ? current : null;
   const inInterface = String(input?.inInterface ?? existing?.inInterface ?? "").trim();
   if (!inInterface) throw new Error("WAN/input interface is required");
-  const externalIp = String(input?.externalIp ?? existing?.externalIp ?? "0.0.0.0").trim() || "0.0.0.0";
-  if (externalIp !== "0.0.0.0") validIpv4(externalIp, "External IP");
-  await validateInterface(inInterface, externalIp);
+  const externalIp = String(input?.externalIp ?? existing?.externalIp ?? anyIp(family)).trim() || anyIp(family);
+  if (externalIp !== anyIp(family)) validAddress(externalIp, "External IP",family);
+  await validateInterface(inInterface, externalIp,family);
   const protocol = String(input?.protocol ?? existing?.protocol ?? "tcp") as NatProtocol;
   if (!(["tcp", "udp"] as string[]).includes(protocol)) throw new Error("Protocol must be TCP or UDP");
-  const sourceCidr = validIpv4Cidr(String(input?.sourceCidr ?? existing?.sourceCidr ?? "0.0.0.0/0"), "Source CIDR");
+  const sourceCidr = validCidr(String(input?.sourceCidr ?? existing?.sourceCidr ?? anyCidr(family)), "Source CIDR",family);
   const rule: NatDnatRule = {
     ...base,
     type: "dnat",
@@ -510,7 +511,7 @@ async function normalizeRule(input: any, current?: NatRule): Promise<NatRule> {
     protocol,
     externalPort: validPort(input?.externalPort ?? existing?.externalPort, "External port"),
     sourceCidr,
-    destination: await normalizeDestination(input?.destination ?? existing?.destination),
+    destination: await normalizeDestination(input?.destination ?? existing?.destination,family),
     internalPort: validPort(input?.internalPort ?? existing?.internalPort, "Internal port"),
     createFirewallRule: input?.createFirewallRule === undefined ? (existing?.createFirewallRule ?? false) : Boolean(input.createFirewallRule)
   };
@@ -533,6 +534,7 @@ function destinationAsFirewallSelector(rule: NatDnatRule): AccessSelector | null
 
 async function syncFirewall(rule: NatRule, replacing = false) {
   if (replacing) await removeNatManagedFirewallRule(rule.id);
+  if (familyOf(rule)===6) return; // IPv6 DNAT requires separate FORWARD policy; never create an IPv4-only rule
   if (rule.type !== "dnat" || !rule.createFirewallRule || !rule.enabled || rule.destination.kind !== "container") return;
   const destination = destinationAsFirewallSelector(rule);
   if (!destination) return;
@@ -643,6 +645,7 @@ export async function getNatStatus() {
   const runtime: Record<string, ResolvedRule> = {};
   for (const rule of config.rules) runtime[rule.id] = await resolveRule(rule, networks, topology);
   let preChainPresent = false, postChainPresent = false;
+  const ipv6Engine={preChainPresent:await chainExists(preChain,6),postChainPresent:await chainExists(postChain,6)};
   try { preChainPresent = await chainExists(preChain); } catch {}
   try { postChainPresent = await chainExists(postChain); } catch {}
   return {
@@ -658,10 +661,10 @@ export async function getNatStatus() {
       composeProject: c.compose?.project ?? null,
       composeService: c.compose?.service ?? null,
       composeContainerNumber: c.compose?.containerNumber ?? null,
-      networks: (c.networks ?? []).map((n: any) => ({ networkName: n.networkName, ipv4Address: n.ipv4Address }))
+      networks: (c.networks ?? []).map((n: any) => ({ networkName: n.networkName, ipv4Address: n.ipv4Address,ipv6Address:n.ipv6Address }))
     })),
     dynamic: { lastRefreshAt, lastError, intervalMs: Math.max(3000, Number(process.env.DRM_NAT_DYNAMIC_INTERVAL_MS ?? 5000)) },
-    engine: { preChain, postChain, preChainPresent, postChainPresent },
+    engine: { preChain, postChain, preChainPresent, postChainPresent,ipv6:ipv6Engine },
     allNatRules
   };
 }

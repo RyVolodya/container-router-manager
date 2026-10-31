@@ -218,11 +218,11 @@ export type NatSourceSelector={
 };
 export type NatContainerDestination={kind:"container";refId:string;refName?:string|null;label?:string|null;composeProject?:string|null;composeService?:string|null;composeContainerNumber?:string|null;networkName?:string|null};
 export type NatIpDestination={kind:"ip";ip:string};
-export type NatOutboundRule={id:string;type:"masquerade"|"snat";enabled:boolean;description:string;createdAt:string;updatedAt:string;source:NatSourceSelector;outInterface:string;toSourceIp:string|null;policyRoute:boolean;routeTable:number};
-export type NatDnatRule={id:string;type:"dnat";enabled:boolean;description:string;createdAt:string;updatedAt:string;inInterface:string;externalIp:string;protocol:"tcp"|"udp";externalPort:number;sourceCidr:string;destination:NatContainerDestination|NatIpDestination;internalPort:number;createFirewallRule:boolean};
+export type NatOutboundRule={id:string;family?:4|6;type:"masquerade"|"snat";enabled:boolean;description:string;createdAt:string;updatedAt:string;source:NatSourceSelector;outInterface:string;toSourceIp:string|null;policyRoute:boolean;routeTable:number};
+export type NatDnatRule={id:string;family?:4|6;type:"dnat";enabled:boolean;description:string;createdAt:string;updatedAt:string;inInterface:string;externalIp:string;protocol:"tcp"|"udp";externalPort:number;sourceCidr:string;destination:NatContainerDestination|NatIpDestination;internalPort:number;createFirewallRule:boolean};
 export type NatRule=NatOutboundRule|NatDnatRule;
 export type HostNatRule={
-  id:string;chain:string;position:number;packets:number;bytes:number;protocol:string;
+  id:string;family:4|6;chain:string;position:number;packets:number;bytes:number;protocol:string;
   source:string;destination:string;inInterface:string|null;outInterface:string|null;
   target:string;sourcePort:string|null;destinationPort:string|null;
   toDestination:string|null;toSource:string|null;owner:"DRM"|"Docker"|"System-External";raw:string;
@@ -230,17 +230,17 @@ export type HostNatRule={
 export type NatStatus={
   config:{rules:NatRule[];updatedAt:string};
   runtime:Record<string,{resolved:boolean;message:string;source:string[];destination:string[]}>;
-  hostInterfaces:Array<{name:string;state:string;addresses:string[];ips:string[]}>;
+  hostInterfaces:Array<{name:string;state:string;addresses:string[];ips:string[];ipv6Addresses:string[];ipv6Ips:string[]}>;
   defaultWanInterface:string|null;
   defaultRoutes:any[];
   networkRefs:Array<{id:string;name:string;subnets:string[]}>;
-  containerRefs:Array<{id:string;name:string;composeProject?:string|null;composeService?:string|null;composeContainerNumber?:string|null;networks:Array<{networkName:string;ipv4Address:string|null}>}>;
+  containerRefs:Array<{id:string;name:string;composeProject?:string|null;composeService?:string|null;composeContainerNumber?:string|null;networks:Array<{networkName:string;ipv4Address:string|null;ipv6Address:string|null}>}>;
   dynamic:{lastRefreshAt:string|null;lastError:string|null;intervalMs:number};
   engine:{preChain:string;postChain:string;preChainPresent:boolean;postChainPresent:boolean};
   allNatRules:HostNatRule[];
 };
 
-export type ManagedHostInterfaceConfig={name:string;mode:"dhcp"|"static";address:string|null;gateway:string|null;metric:number|null;addDefaultRoute:boolean;vlan:{parent:string;vlanId:number}|null;enabled:boolean;createdAt:string;updatedAt:string};
-export type HostInterfaceRuntime={name:string;index:number;kind:string;state:string;up:boolean;mac:string|null;mtu:number|null;ipv4:string[];defaultRoutes:any[];vlanId:number|null;parent:string|null;managedVlan:boolean;managedConfig:ManagedHostInterfaceConfig|null};
+export type ManagedHostInterfaceConfig={name:string;mode:"dhcp"|"static";address:string|null;gateway:string|null;metric:number|null;addDefaultRoute:boolean;dns4?:string[];vlan:{parent:string;vlanId:number}|null;enabled:boolean;createdAt:string;updatedAt:string;ipv6?:{enabled:boolean;mode:"static"|"auto";address:string|null;gateway:string|null;metric:number|null;slaac:boolean;dhcpv6:boolean;addDefaultRoute:boolean;dns?:string[]}|null};
+export type HostInterfaceRuntime={name:string;index:number;kind:string;state:string;up:boolean;mac:string|null;mtu:number|null;ipv4:string[];ipv6:string[];ipv4ActualMode:"STATIC"|"DHCP"|"NONE";dns4?:string[];dns6?:string[];defaultRoutes:any[];vlanId:number|null;parent:string|null;managedVlan:boolean;managedConfig:ManagedHostInterfaceConfig|null};
 export type PendingHostInterfaceChange={token:string;interfaceName:string;previousManaged:ManagedHostInterfaceConfig|null;desired:ManagedHostInterfaceConfig;expiresAt:string;createdAt:string};
 export type HostInterfaceManagementStatus={interfaces:HostInterfaceRuntime[];managed:ManagedHostInterfaceConfig[];pending:PendingHostInterfaceChange|null;rollbackMs:number;generatedAt:string};

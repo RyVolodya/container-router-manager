@@ -1,0 +1,13 @@
+[Unit]
+Description=DRM IPv6 networkd Safe Apply helper
+After=systemd-networkd.service
+Requires=systemd-networkd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/drm/drm_network_agent.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

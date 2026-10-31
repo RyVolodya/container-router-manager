@@ -2665,3 +2665,14 @@ code, pre { font-size: 12px; }
 .wg-interface-builder-dual{grid-template-columns:.7fr 1.1fr .75fr 1.1fr .7fr .6fr auto}
 @media(max-width:1250px){.wg-interface-builder-dual{grid-template-columns:1fr 1fr 1fr}}
 @media(max-width:760px){.wg-interface-builder-dual{grid-template-columns:1fr}.wg-interface-edit,.wg-interface-delete{width:38px;flex-basis:38px}}
+
+/* Dashboard layout and traffic address visual consistency */
+.network-overview-full{width:100%;min-width:0}.network-overview-full .network-list{width:100%}.traffic-container-address{color:inherit!important;opacity:1!important;font-weight:inherit}
+
+/* v0.17.5 DNS layout fix: keep Configure/Forget actions in one row. */
+.host-interface-list{overflow-x:auto}
+.host-interface-row{grid-template-columns:minmax(168px,1.1fr) minmax(175px,1fr) minmax(170px,1fr) minmax(130px,.75fr) minmax(180px,1fr) max-content;min-width:1090px}
+.host-interface-actions{display:flex;flex-flow:row nowrap;white-space:nowrap;align-items:center;justify-content:flex-end;gap:7px}
+.host-interface-actions>button{flex:0 0 auto}
+@media(max-width:1100px){.host-interface-row{grid-template-columns:minmax(168px,1.1fr) minmax(175px,1fr) minmax(170px,1fr) minmax(130px,.75fr) minmax(180px,1fr) max-content}}
+@media(max-width:700px){.host-interface-row{grid-template-columns:minmax(168px,1.1fr) minmax(175px,1fr) minmax(170px,1fr) minmax(130px,.75fr) minmax(180px,1fr) max-content}}

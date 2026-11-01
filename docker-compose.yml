@@ -1,5 +1,6 @@
 services:
   backend:
+    image: ghcr.io/ryvolodya/container-router-manager-backend:${DRM_VERSION:-0.18.1}
     build:
       context: ./backend
     container_name: drm-backend
@@ -25,10 +26,11 @@ services:
       COOKIE_SECURE: "false"
       SESSION_TTL_MS: "86400000"
       SESSION_TOUCH_INTERVAL_MS: "300000"
-      GITHUB_REPOSITORY: "RyVolodya/docker-router-manager"
+      GITHUB_REPOSITORY: "RyVolodya/container-router-manager"
       GITHUB_UPDATE_CACHE_MS: "900000"
 
   frontend:
+    image: ghcr.io/ryvolodya/container-router-manager-frontend:${DRM_VERSION:-0.18.1}
     build:
       context: ./frontend
     container_name: drm-frontend

@@ -193,7 +193,7 @@ function MainApp({auth,onAuthChange,onLogout,theme,onToggleTheme}:{auth:AuthUser
             <span className="theme-toggle-text">{theme==="dark"?"Light theme":"Dark theme"}</span>
           </button>
           <div className="sidebar-user"><strong>{auth.username}</strong><span>{auth.role}</span><button onClick={onLogout} title="Logout"><LogOut size={14}/></button></div>
-          <div className="version">DRM v0.17.3</div>
+          <div className="version">DRM v0.18.1</div>
         </div>
       </aside>
 
@@ -321,7 +321,7 @@ function AuthenticatedApp(){
       window.dispatchEvent(new CustomEvent("drm-notification",{detail:{
         type:"info",
         message:`New DRM version ${status.latestVersion} is available`,
-        detail:`You are running v${status.currentVersion}. Open the GitHub release to view changes and download the new version.`,
+        detail:`You are running v${status.currentVersion}. Run docker compose pull && docker compose up -d on your server to update (if GHCR images are published).`,
         actionUrl:status.releaseUrl,
         actionLabel:"View release on GitHub"
       }}));

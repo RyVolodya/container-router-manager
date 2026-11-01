@@ -1,6 +1,0 @@
-node_modules
-dist
-build
-coverage
-package-lock.json
-*.config.js

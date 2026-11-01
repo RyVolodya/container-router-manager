@@ -1,1 +1,0 @@
-export { pool } from "../db";

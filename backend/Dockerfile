@@ -1,21 +1,16 @@
-FROM node:24-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:24-alpine
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-
-# iptables on modern Alpine normally uses the nftables compatibility backend.
-RUN apk add --no-cache iptables ip6tables conntrack-tools iproute2 wireguard-tools procps busybox-extras
-
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
-
-EXPOSE 8081
+EXPOSE 5000
 CMD ["node", "dist/index.js"]

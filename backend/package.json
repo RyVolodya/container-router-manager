@@ -1,23 +1,29 @@
 {
-  "name": "docker-router-manager-backend",
-  "version": "0.18.0",
-  "private": true,
-  "type": "module",
+  "name": "rsyslog-backend",
+  "version": "1.6.3",
+  "main": "dist/app.js",
   "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "@node-rs/argon2": "^2.0.2",
-    "express-rate-limit": "^8.0.1",
-    "helmet": "^8.1.0",
-    "qrcode": "^1.5.4"
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.2.1",
+    "joi": "^18.0.1",
+    "node-cron": "^3.0.3",
+    "pg": "^8.8.0",
+    "ws": "~8.17.1"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.0.0",
-    "typescript": "^5.9.0",
-    "@types/qrcode": "^1.5.5"
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.15.6",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.0.0"
   }
 }

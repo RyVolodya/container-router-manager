@@ -1,42 +1,99 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: simple-syslog-postgres
+    restart: unless-stopped
+    command: ["postgres", "-c", "timezone=UTC"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rsyslog}
+      POSTGRES_USER: ${POSTGRES_USER:-syslog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-syslog} -d ${POSTGRES_DB:-rsyslog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - syslog-net
+
+  collector:
+    build:
+      context: ./collector
+    container_name: simple-syslog-collector
+    restart: unless-stopped
+    environment:
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: ${POSTGRES_DB:-rsyslog}
+      PG_USER: ${POSTGRES_USER:-syslog}
+      PG_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "${SYSLOG_UDP_PORT:-514}:514/udp"
+      - "${SYSLOG_TCP_PORT:-514}:514/tcp"
+    volumes:
+      - rsyslog_queue:/var/spool/rsyslog
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - syslog-net
+
   backend:
     build:
       context: ./backend
-    container_name: drm-backend
+    container_name: simple-syslog-backend
     restart: unless-stopped
-    network_mode: host
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - drm-data:/data
-      - /proc/sys:/host/proc/sys
     environment:
-      PORT: "8081"
-      DOCKER_SOCKET: /var/run/docker.sock
-      DRM_DATA_DIR: /data
-      DRM_NETWORK_POLICY_INTERVAL_MS: "5000"
-      DRM_FIREWALL_DYNAMIC_INTERVAL_MS: "5000"
-      DRM_NAT_DYNAMIC_INTERVAL_MS: "5000"
-      DRM_INTERFACE_ROLLBACK_MS: "60000"
-      HOST_PROC_SYS: /host/proc/sys
-      COOKIE_SECURE: "false"
-      SESSION_TTL_MS: "86400000"
-      SESSION_TOUCH_INTERVAL_MS: "300000"
-      GITHUB_REPOSITORY: "RyVolodya/container-router-manager"
-      GITHUB_UPDATE_CACHE_MS: "900000"
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: ${POSTGRES_DB:-rsyslog}
+      PG_USER: ${POSTGRES_USER:-syslog}
+      PG_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:-http://localhost:8080}
+      CORS_DOMAINS: ${CORS_DOMAINS:-http://localhost:8080}
+      PORT: 5000
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    expose:
+      - "5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - syslog-net
 
   frontend:
     build:
       context: ./frontend
-    container_name: drm-frontend
+    container_name: simple-syslog-frontend
     restart: unless-stopped
-    depends_on:
-      - backend
     ports:
-      - "8080:80"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - syslog-net
 
 volumes:
-  drm-data:
+  postgres_data:
+  rsyslog_queue:
+
+networks:
+  syslog-net:
+    driver: bridge

@@ -1,8 +1,7 @@
 services:
   backend:
-    image: ghcr.io/ryvolodya/container-router-manager-backend:${DRM_VERSION:-0.18.1}
-    build:
-      context: ./backend
+    image: ghcr.io/ryvolodya/container-router-manager-backend:${DRM_VERSION:-latest}
+    pull_policy: always
     container_name: drm-backend
     restart: unless-stopped
     network_mode: host
@@ -30,9 +29,8 @@ services:
       GITHUB_UPDATE_CACHE_MS: "900000"
 
   frontend:
-    image: ghcr.io/ryvolodya/container-router-manager-frontend:${DRM_VERSION:-0.18.1}
-    build:
-      context: ./frontend
+    image: ghcr.io/ryvolodya/container-router-manager-frontend:${DRM_VERSION:-latest}
+    pull_policy: always
     container_name: drm-frontend
     restart: unless-stopped
     depends_on:

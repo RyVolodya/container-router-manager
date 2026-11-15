@@ -1,4 +1,10 @@
-const CURRENT_VERSION = "0.18.1";
+import { createRequire } from "node:module";
+
+// Read the installed backend package version rather than maintaining a separate
+// hard-coded constant. This also works in the production Docker image, where
+// the compiled module lives in /app/dist and package.json lives in /app.
+const require = createRequire(import.meta.url);
+const { version: CURRENT_VERSION } = require("../package.json") as { version: string };
 const cacheTtlMs = Number(process.env.GITHUB_UPDATE_CACHE_MS ?? 15 * 60 * 1000);
 
 type GithubRelease = {

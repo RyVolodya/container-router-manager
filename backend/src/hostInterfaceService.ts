@@ -76,6 +76,20 @@ async function networkAgent(operation:string, payload:Record<string,unknown>={})
    socket.on("end",()=>{if(!finished)finish(new Error("DRM host agent closed connection"))});
  });
 }
+export async function getHostNetworkAgentStatus():Promise<{online:boolean;message:string;checkedAt:string}>{
+ const checkedAt=new Date().toISOString();
+ return new Promise(resolve=>{
+  const socket=createConnection(agentSocket);
+  let completed=false;
+  const finish=(online:boolean,message:string)=>{if(completed)return;completed=true;clearTimeout(timer);socket.destroy();resolve({online,message,checkedAt})};
+  const timer=setTimeout(()=>finish(false,"Host Network Agent did not respond within 2 seconds"),2000);
+  let data="";
+  socket.on("connect",()=>socket.write(JSON.stringify({operation:"status"})+"\n"));
+  socket.on("data",chunk=>{data+=chunk.toString();if(data.includes("\n")){try{const response=JSON.parse(data.split("\n")[0]);finish(response.ok===true,response.ok===true?"Host Network Agent is responding":String(response.error??"Agent returned an error"))}catch{finish(false,"Invalid Host Network Agent response")}}});
+  socket.on("error",err=>finish(false,`Host Network Agent unavailable: ${err.message}`));
+  socket.on("end",()=>finish(false,"Host Network Agent disconnected"));
+ });
+}
 async function sysctl(name:string,key:string,value?:string){const p=`${process.env.HOST_PROC_SYS??"/host/proc/sys"}/net/ipv6/conf/${name}/${key}`;if(value!==undefined){await writeFile(p,value);return value}return (await readFile(p,"utf8")).trim()}
 async function getIpv6Sysctls(name:string){const out:Record<string,string>={};for(const k of ["accept_ra","autoconf","accept_ra_defrtr","use_tempaddr"]){try{out[k]=await sysctl(name,k)}catch{}}return out}
 async function stopDhcp6(name:string){const p=`${dataDir}/dhcp6-${name}.pid`;try{const pid=Number((await readFile(p,"utf8")).trim());if(pid)process.kill(pid,"SIGTERM")}catch{}try{await unlink(p)}catch{}}

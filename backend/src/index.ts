@@ -11,7 +11,7 @@ import { createDockerNetwork, deleteDockerNetwork, suggestBridgeSubnet, getConta
 import { deleteManagedVlan, ensureManagedVlan, listHostInterfaces, restoreManagedVlans } from "./vlanService.js";
 import { deleteContainerNetworkPolicy, getContainerNetworkPolicy, saveCurrentContainerNetworkPolicy, startContainerNetworkPolicyReconciler } from "./containerNetworkPolicyService.js";
 import { addNatRule, deleteNatRule, getNatStatus, startNatReconciler, updateNatRule, refreshNatRules } from "./natService.js";
-import { applyHostInterfaceChange, confirmHostInterfaceChange, deleteHostVlanInterface, forgetManagedHostInterface, getHostInterfaceManagementStatus, restoreManagedHostInterfaces, rollbackPendingInterfaceChange } from "./hostInterfaceService.js";
+import { applyHostInterfaceChange, confirmHostInterfaceChange, deleteHostVlanInterface, forgetManagedHostInterface, getHostInterfaceManagementStatus, getHostNetworkAgentStatus, restoreManagedHostInterfaces, rollbackPendingInterfaceChange } from "./hostInterfaceService.js";
 import { createVrf, deleteVrf, getVrfStatus, restoreVrfs, updateVrf } from "./vrfService.js";
 
 const app = express();
@@ -29,7 +29,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "64kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "docker-router-manager", version: "0.18.1" });
+  res.json({ status: "ok", service: "docker-router-manager", version: "0.18.2" });
 });
 
 
@@ -453,6 +453,7 @@ app.post("/api/firewall/host-input-rules/reorder", async (req,res)=>{try{res.jso
 
 
 
+app.get('/api/interfaces/agent-status', async (_req,res)=>{res.setHeader('Cache-Control','no-store');res.json(await getHostNetworkAgentStatus())});
 app.get('/api/interfaces/status', async (_req,res)=>{try{res.json(await getHostInterfaceManagementStatus())}catch(e){res.status(500).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/interfaces/apply', async (req,res)=>{try{res.json(await applyHostInterfaceChange(req.body))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});
 app.post('/api/interfaces/confirm', async (req,res)=>{try{res.json(await confirmHostInterfaceChange(req.body?.token))}catch(e){res.status(400).json({message:e instanceof Error?e.message:String(e)})}});

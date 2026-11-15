@@ -195,6 +195,7 @@ export const createNatRule=(rule:any)=>apiFetch("/api/nat/rules",{method:"POST",
 export const updateNatRule=(id:string,rule:any)=>apiFetch(`/api/nat/rules/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(rule)});
 export const removeNatRule=(id:string)=>apiFetch(`/api/nat/rules/${encodeURIComponent(id)}`,{method:"DELETE"});
 
+export const getHostNetworkAgentStatus=():Promise<{online:boolean;message:string;checkedAt:string}>=>apiFetch("/api/interfaces/agent-status");
 export const getHostInterfacesStatus=():Promise<HostInterfaceManagementStatus>=>apiFetch("/api/interfaces/status");
 export const applyHostInterface=(body:any)=>apiFetch("/api/interfaces/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 export const confirmHostInterface=(token:string)=>apiFetch("/api/interfaces/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
